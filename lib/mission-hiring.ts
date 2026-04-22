@@ -76,7 +76,7 @@ export function getWorkerInterestLabel(snapshot: MissionApplicationSnapshot): st
 
 export function getPatronApplicationLabel(snapshot: MissionApplicationSnapshot): string {
   const status = normalizeMissionApplicationStatus(snapshot.statut)
-  if (status === 'selected') return 'Profil selectionne'
+  if (status === 'selected') return 'Profil sélectionné'
   if (status === 'declined') return 'Profil refuse'
   if (status === 'expired') return 'Profil expire'
   if (status === 'cancelled') return 'Mission annulee'

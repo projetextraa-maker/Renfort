@@ -138,7 +138,7 @@ export default function MissionsServeurScreen() {
   const onRefresh = useCallback(async () => { setRefreshing(true); await fetchData(); setRefreshing(false) }, [fetchData])
 
   const accepterOffre = async (annonceId: string) => {
-    Alert.alert('Confirmer', 'Confirmer votre disponibilit\u00e9 pour cette mission ?', [{ text: 'Annuler', style: 'cancel' }, { text: 'Confirmer ma disponibilit\u00e9', onPress: async () => { const userId = await getCurrentUserId(); if (!userId) return; const result = await selectServeurForMission(annonceId, userId); if (!result.ok) { const targetOffre = offresRecues.find((offre) => offre.annonce_id === annonceId) ?? null; const busyMessage = targetOffre ? getServerBusySlotMessage(detectMissionSlot(targetOffre.heure_debut, targetOffre.heure_fin), 'self') : getServerBusySlotMessage(null, 'self'); Alert.alert('Information', result.reason === 'already_assigned' ? 'Cette mission a d\u00e9j\u00e0 \u00e9t\u00e9 pourvue.' : result.reason === 'worker_unavailable' ? busyMessage : 'Impossible de confirmer votre disponibilit\u00e9.'); return } fetchData() } }])
+    Alert.alert('Confirmer', 'Confirmer votre disponibilité pour cette mission ?', [{ text: 'Annuler', style: 'cancel' }, { text: 'Confirmer ma disponibilité', onPress: async () => { const userId = await getCurrentUserId(); if (!userId) return; const result = await selectServeurForMission(annonceId, userId); if (!result.ok) { const targetOffre = offresRecues.find((offre) => offre.annonce_id === annonceId) ?? null; const busyMessage = targetOffre ? getServerBusySlotMessage(detectMissionSlot(targetOffre.heure_debut, targetOffre.heure_fin), 'self') : getServerBusySlotMessage(null, 'self'); Alert.alert('Information', result.reason === 'already_assigned' ? 'Cette mission a déjà été pourvue.' : result.reason === 'worker_unavailable' ? busyMessage : 'Impossible de confirmer votre disponibilité.'); return } fetchData() } }])
   }
   const refuserOffre = async (demandeId: string) => { await supabase.from('demandes').update({ statut: 'refusee' }).eq('id', demandeId); fetchData() }
   const annulerParticipation = async (annonceId: string) => {
@@ -157,10 +157,10 @@ export default function MissionsServeurScreen() {
     const userId = await getCurrentUserId(); if (!userId || postulatingAnnonceId) return; setPostulatingAnnonceId(annonceId)
     try {
       const { data: existing } = await supabase.from('demandes').select('id, initiateur').eq('annonce_id', annonceId).eq('serveur_id', userId).in('statut', ['en_attente', 'acceptee']).maybeSingle()
-      if (existing) { Alert.alert('Information', existing.initiateur === 'patron' ? 'Cette proposition attend d\u00e9j\u00e0 votre r\u00e9ponse.' : 'Votre int\u00e9r\u00eat est d\u00e9j\u00e0 enregistr\u00e9.'); return }
+      if (existing) { Alert.alert('Information', existing.initiateur === 'patron' ? 'Cette proposition attend déjà votre réponse.' : 'Votre intérêt est déjà enregistré.'); return }
       const { error } = await supabase.from('demandes').insert({ annonce_id: annonceId, serveur_id: userId, statut: 'en_attente', initiateur: 'serveur' })
-      if (error) { Alert.alert('Erreur', "Impossible d'envoyer votre int\u00e9r\u00eat."); return }
-      Alert.alert('Int\u00e9r\u00eat envoy\u00e9', "L'\u00e9tablissement a bien re\u00e7u votre disponibilit\u00e9.")
+      if (error) { Alert.alert('Erreur', "Impossible d'envoyer votre intérêt."); return }
+      Alert.alert('Intérêt envoyé', "L'établissement a bien reçu votre disponibilité.")
       await fetchData()
     } finally { setPostulatingAnnonceId(null) }
   }
@@ -175,19 +175,19 @@ export default function MissionsServeurScreen() {
       if (existing) {
         const statusLabel =
           existing.status === 'pending'
-            ? 'Contre-offre envoy\u00e9e'
+            ? 'Contre-offre envoyée'
             : existing.status === 'accepted'
-              ? 'Contre-offre accept\u00e9e'
+              ? 'Contre-offre acceptée'
               : existing.status === 'rejected'
-                ? 'Contre-offre refus\u00e9e'
-                : 'Contre-offre d\u00e9j\u00e0 enregistr\u00e9e'
-        Alert.alert(statusLabel, `Votre proposition \u00e0 ${existing.counter_rate}${EURO}/h a d\u00e9j\u00e0 \u00e9t\u00e9 enregistr\u00e9e.`)
+                ? 'Contre-offre refusée'
+                : 'Contre-offre déjà enregistrée'
+        Alert.alert(statusLabel, `Votre proposition à ${existing.counter_rate}${EURO}/h a déjà été enregistrée.`)
         return
       }
 
       const eligibility = await getMissionRateNegotiationEligibility(userId, annonce.id)
       if (!eligibility.allowed) {
-        Alert.alert('N\u00e9gociation indisponible', eligibility.reasons[0] ?? 'Cette mission ne peut pas \u00eatre n\u00e9goci\u00e9e.')
+        Alert.alert('Négociation indisponible', eligibility.reasons[0] ?? 'Cette mission ne peut pas être négociée.')
         return
       }
 
@@ -234,7 +234,7 @@ export default function MissionsServeurScreen() {
       }))
       fermerNegociation()
       Alert.alert(
-        'Contre-offre envoy\u00e9e',
+        'Contre-offre envoyée',
         `Votre proposition à ${result.negotiation.counter_rate}${EURO}/h a bien été transmise au patron.`
       )
       await fetchData()
@@ -260,7 +260,7 @@ export default function MissionsServeurScreen() {
           <View style={s.headerText}>
             <Text style={s.overline}>MISSIONS</Text>
             <Text style={s.name}>{serveur.prenom} <Text style={s.nameAccent}>{serveur.nom}</Text></Text>
-            <Text style={s.headerSub}>Suivez vos propositions, vos int\u00e9r\u00eats envoy\u00e9s et vos missions s\u00e9lectionn\u00e9es.</Text>
+            <Text style={s.headerSub}>Suivez vos propositions, vos intérêts envoyés et vos missions sélectionnées.</Text>
           </View>
           <View style={s.avatar} pointerEvents="none">
             <Text style={s.avatarText}>{initials}</Text>
@@ -269,7 +269,7 @@ export default function MissionsServeurScreen() {
         </View>
 
         <View style={s.statsRow}>
-          <View style={s.statCard}><Text style={[s.statNum, { color: C.accent }]}>{nbProches}</Text><Text style={s.statLbl}>Opportunit\u00e9s</Text></View>
+          <View style={s.statCard}><Text style={[s.statNum, { color: C.accent }]}>{nbProches}</Text><Text style={s.statLbl}>Opportunités</Text></View>
           <View style={s.statCard}><Text style={[s.statNum, { color: C.terra }]}>{offresRecues.length}</Text><Text style={s.statLbl}>Propositions</Text></View>
           <View style={s.statCard}><Text style={[s.statNum, { color: C.accent }]}>{missionsActives.length}</Text><Text style={s.statLbl}>En cours</Text></View>
         </View>
@@ -295,14 +295,11 @@ export default function MissionsServeurScreen() {
                     <Text style={[s.badgeTrackedTxt, { color: tone.text }]}>{candidature.status_label.toUpperCase()}</Text>
                   </View>
                 </View>
-                <View style={s.tags}>
-                  <View style={s.tag}><Text style={s.tagTxt}>{formatDateFr(candidature.date)}</Text></View>
-                  <View style={s.tag}><Text style={s.tagTxt}>{candidature.heure_debut} - {candidature.heure_fin}</Text></View>
-                  <View style={s.tag}><Text style={s.tagTxt}>{candidature.ville}</Text></View>
-                </View>
-                <View style={s.salaireRow}>
-                  <Text style={s.salaire}>{candidature.salaire != null ? `~${netEstime(candidature.salaire)}${EURO}` : '-'}</Text>
-                  <Text style={s.salaireLbl}> / h net est.</Text>
+                <View style={s.detailList}>
+                  <View style={s.detailRow}><Text style={s.detailLabel}>Ville</Text><Text style={s.detailValue}>{candidature.ville}</Text></View>
+                  <View style={s.detailRow}><Text style={s.detailLabel}>Date</Text><Text style={s.detailValue}>{formatDateFr(candidature.date)}</Text></View>
+                  <View style={s.detailRow}><Text style={s.detailLabel}>Horaires</Text><Text style={s.detailValue}>{candidature.heure_debut} - {candidature.heure_fin}</Text></View>
+                  <View style={s.detailRow}><Text style={s.detailLabel}>Tarif</Text><Text style={s.detailValueStrong}>{candidature.salaire != null ? `~${netEstime(candidature.salaire)}${EURO} / h net` : '-'}</Text></View>
                 </View>
               </View>
             )
@@ -310,7 +307,7 @@ export default function MissionsServeurScreen() {
         </>}
 
         {offresRecues.length > 0 && <>
-          <View style={s.sectionHeader}><Text style={s.sectionTitle}>Missions propos\u00e9es</Text><View style={s.sectionBadge}><Text style={s.sectionBadgeTxt}>{offresRecues.length}</Text></View></View>
+          <View style={s.sectionHeader}><Text style={s.sectionTitle}>Missions proposées</Text><View style={s.sectionBadge}><Text style={s.sectionBadgeTxt}>{offresRecues.length}</Text></View></View>
           <View style={s.list}>{offresRecues.map((offre, i) => (
             <View key={offre.demande_id} style={[s.card, i < offresRecues.length - 1 && s.cardMb]}>
               <View style={s.cardTop}>
@@ -318,14 +315,15 @@ export default function MissionsServeurScreen() {
                 <View style={{ flex: 1 }}><Text style={s.cardPoste}>{offre.poste}</Text><Text style={s.cardResto}>{offre.nom_restaurant}</Text></View>
                 <View style={s.badge}><Text style={s.badgeTxt}>{getWorkerInterestLabel({ statut: 'en_attente', initiateur: 'patron' }).toUpperCase()}</Text></View>
               </View>
-              <View style={s.tags}>
-                <View style={s.tag}><Text style={s.tagTxt}>{formatDateFr(offre.date)}</Text></View>
-                <View style={s.tag}><Text style={s.tagTxt}>{offre.heure_debut} - {offre.heure_fin}</Text></View>
-                <View style={s.tag}><Text style={s.tagTxt}>{offre.ville}</Text></View>
+              <View style={s.detailList}>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Établissement</Text><Text style={s.detailValue}>{offre.nom_restaurant}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Ville</Text><Text style={s.detailValue}>{offre.ville}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Date</Text><Text style={s.detailValue}>{formatDateFr(offre.date)}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Horaires</Text><Text style={s.detailValue}>{offre.heure_debut} - {offre.heure_fin}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Tarif</Text><Text style={s.detailValueStrong}>{`~${netEstime(offre.salaire)}${EURO} / h net`}</Text></View>
               </View>
-              <View style={s.salaireRow}><Text style={s.salaire}>{`~${netEstime(offre.salaire)}${EURO}`}</Text><Text style={s.salaireLbl}> / h net est.</Text></View>
               <View style={s.actions}>
-                <TouchableOpacity style={[s.btn, s.btnAccept]} onPress={() => accepterOffre(offre.annonce_id)} activeOpacity={0.85}><Text style={s.btnAcceptTxt}>Confirmer ma disponibilit\u00e9</Text></TouchableOpacity>
+                <TouchableOpacity style={[s.btn, s.btnAccept]} onPress={() => accepterOffre(offre.annonce_id)} activeOpacity={0.85}><Text style={s.btnAcceptTxt}>Confirmer ma disponibilité</Text></TouchableOpacity>
                 <TouchableOpacity style={[s.btn, s.btnRefus]} onPress={() => refuserOffre(offre.demande_id)} activeOpacity={0.85}><Text style={s.btnRefusTxt}>Refuser</Text></TouchableOpacity>
               </View>
             </View>
@@ -333,7 +331,7 @@ export default function MissionsServeurScreen() {
         </>}
 
         {missionsActives.length > 0 && <>
-          <View style={s.sectionHeader}><Text style={s.sectionTitle}>{missionsActives.length > 1 ? 'Missions s\u00e9lectionn\u00e9es' : 'Mission s\u00e9lectionn\u00e9e'}</Text></View>
+          <View style={s.sectionHeader}><Text style={s.sectionTitle}>{missionsActives.length > 1 ? 'Missions sélectionnées' : 'Mission sélectionnée'}</Text></View>
           <View style={s.list}>{missionsActives.map((mission, i) => (
             <View key={mission.id} style={[s.cardConfirmed, i < missionsActives.length - 1 && s.cardMb]}>
               {(() => {
@@ -343,7 +341,7 @@ export default function MissionsServeurScreen() {
                 const dpaeTone = missionSummary.dpaeDone
                   ? { bg: C.accentSoft, border: C.accentSoftBorder, text: C.accent }
                   : { bg: C.terraBg, border: C.terraBd, text: C.terra }
-                const dpaeLabel = missionSummary.dpaeDone ? 'URSSAF confirm\u00e9e' : 'URSSAF \u00e0 finaliser'
+                const dpaeLabel = missionSummary.dpaeDone ? 'URSSAF confirmée' : 'URSSAF à finaliser'
                 const checklistItems = [
                   {
                     label: 'Contrat employeur',
@@ -374,11 +372,12 @@ export default function MissionsServeurScreen() {
                 <View style={{ flex: 1 }}><Text style={s.cardPoste}>{mission.poste}</Text><Text style={s.cardResto}>{mission.nom_restaurant}</Text></View>
                 <View style={s.badgeConfirmed}><Text style={s.badgeConfirmedTxt}>{missionSummary.missionStatusLabel.toUpperCase()}</Text></View>
               </View>
-              <View style={s.tags}>
-                <View style={s.tag}><Text style={s.tagTxt}>{formatDateFr(mission.date)}</Text></View>
-                <View style={s.tag}><Text style={s.tagTxt}>{mission.heure_debut} - {mission.heure_fin}</Text></View>
-                <View style={s.tag}><Text style={s.tagTxt}>{mission.ville}</Text></View>
-                <View style={s.tag}><Text style={s.tagTxt}>{missionSummary.contractDisplayLabel}</Text></View>
+              <View style={s.detailList}>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Établissement</Text><Text style={s.detailValue}>{mission.nom_restaurant}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Ville</Text><Text style={s.detailValue}>{mission.ville}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Date</Text><Text style={s.detailValue}>{formatDateFr(mission.date)}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Horaires</Text><Text style={s.detailValue}>{mission.heure_debut} - {mission.heure_fin}</Text></View>
+                <View style={s.detailRow}><Text style={s.detailLabel}>Contrat</Text><Text style={s.detailValue}>{missionSummary.contractDisplayLabel}</Text></View>
               </View>
               <View style={[s.statusStrip, { backgroundColor: dpaeTone.bg, borderColor: dpaeTone.border }]}>
                 <Text style={s.statusStripLabel}>URSSAF</Text>
@@ -411,13 +410,13 @@ export default function MissionsServeurScreen() {
           ))}</View>
         </>}
 
-        <View style={s.sectionHeader}><Text style={s.sectionTitle}>Opportunit\u00e9s autour de vous</Text><TouchableOpacity onPress={() => router.push('/missions-disponibles')}><Text style={s.sectionLink}>Tout voir</Text></TouchableOpacity></View>
+        <View style={s.sectionHeader}><Text style={s.sectionTitle}>Opportunités autour de vous</Text><TouchableOpacity onPress={() => router.push('/missions-disponibles')}><Text style={s.sectionLink}>Tout voir</Text></TouchableOpacity></View>
 
         {annonces.length === 0 ? (
           <View style={s.emptyCard}>
-            <Text style={s.emptyTitle}>Aucune mission pour l&apos;instant</Text>
-            <Text style={s.emptySub}>{dispo ? `\u00c9largissez votre rayon au-del\u00e0 de ${serveur.rayon ?? 0} km` : 'Activez vos disponibilit\u00e9s dans l\u2019onglet Disponibilit\u00e9s'}</Text>
-            {!dispo && <TouchableOpacity style={s.emptyBtn} onPress={() => router.push('/(server-tabs)/disponibilites')} activeOpacity={0.9}><Text style={s.emptyBtnTxt}>Configurer mes disponibilit\u00e9s</Text></TouchableOpacity>}
+            <Text style={s.emptyTitle}>Aucune mission pour l’instant</Text>
+            <Text style={s.emptySub}>{dispo ? `Élargissez votre rayon au-delà de ${serveur.rayon ?? 0} km` : 'Activez vos disponibilités dans l’onglet Disponibilités'}</Text>
+            {!dispo && <TouchableOpacity style={s.emptyBtn} onPress={() => router.push('/(server-tabs)/disponibilites')} activeOpacity={0.9}><Text style={s.emptyBtnTxt}>Configurer mes disponibilités</Text></TouchableOpacity>}
           </View>
         ) : (
           <View style={s.list}>{annonces.map((annonce, i) => (
@@ -426,11 +425,11 @@ export default function MissionsServeurScreen() {
                 const negotiation = negotiations[annonce.id] ?? null
                 const negotiationLabel =
                   negotiation?.status === 'pending'
-                    ? `Contre-offre envoy\u00e9e : ${negotiation.counter_rate}${EURO}/h`
+                    ? `Contre-offre envoyée : ${negotiation.counter_rate}${EURO}/h`
                     : negotiation?.status === 'accepted'
-                      ? `Contre-offre accept\u00e9e : ${negotiation.counter_rate}${EURO}/h`
+                      ? `Contre-offre acceptée : ${negotiation.counter_rate}${EURO}/h`
                       : negotiation?.status === 'rejected'
-                        ? `Contre-offre refus\u00e9e : ${negotiation.counter_rate}${EURO}/h`
+                        ? `Contre-offre refusée : ${negotiation.counter_rate}${EURO}/h`
                         : null
                 return negotiationLabel ? (
                   <View style={s.negotiationBanner}>
@@ -443,11 +442,11 @@ export default function MissionsServeurScreen() {
                 <View style={s.missionBody}>
                   <Text style={s.missionPoste} numberOfLines={1}>{annonce.poste}</Text>
                   {annonce.nom_restaurant ? <Text style={s.missionResto}>{annonce.nom_restaurant}</Text> : null}
-                  <View style={s.metaRow}>
-                    <View style={s.metaPill}><Text style={s.metaTxt}>{annonce.ville} - {formatDistance(annonce.distanceKm)}</Text></View>
-                    <View style={s.metaPill}><Text style={s.metaTxt}>{formatDateFr(annonce.date)}</Text></View>
+                  <View style={s.detailListCompact}>
+                    <View style={s.detailRowCompact}><Text style={s.detailLabel}>Ville</Text><Text style={s.detailValue}>{annonce.ville} · {formatDistance(annonce.distanceKm)}</Text></View>
+                    <View style={s.detailRowCompact}><Text style={s.detailLabel}>Date</Text><Text style={s.detailValue}>{formatDateFr(annonce.date)}</Text></View>
+                    <View style={s.detailRowCompact}><Text style={s.detailLabel}>Horaires</Text><Text style={s.detailValue}>{annonce.heure_debut} - {annonce.heure_fin}</Text></View>
                   </View>
-                  <Text style={s.missionHours}>{annonce.heure_debut} - {annonce.heure_fin}</Text>
                 </View>
                 <View style={s.missionRight}><Text style={s.missionPrice}>{`~${netEstime(annonce.salaire)}${EURO}`}</Text><Text style={s.missionPriceHint}>/ h net</Text></View>
               </View>
@@ -455,7 +454,7 @@ export default function MissionsServeurScreen() {
                 <View style={s.missionFooter}>
                   <TouchableOpacity style={[s.footerBtn, s.footerBtnGhost]} onPress={() => setExpandedOpportunityId(null)} activeOpacity={0.85}><Text style={s.footerBtnGhostTxt}>Fermer</Text></TouchableOpacity>
                   <TouchableOpacity style={[s.footerBtn, s.footerBtnGhost]} onPress={() => ouvrirNegociation(annonce)} activeOpacity={0.85}><Text style={s.footerBtnGhostTxt}>Proposer un tarif</Text></TouchableOpacity>
-                  <TouchableOpacity style={[s.footerBtn, s.footerBtnPrimary, (postulatingAnnonceId === annonce.id || Boolean(negotiations[annonce.id])) && s.footerBtnDisabled]} disabled={postulatingAnnonceId === annonce.id || Boolean(negotiations[annonce.id])} onPress={() => postulerOpportunite(annonce.id)} activeOpacity={0.85}><Text style={s.footerBtnPrimaryTxt}>{negotiations[annonce.id] ? 'Int\u00e9r\u00eat d\u00e9j\u00e0 envoy\u00e9' : postulatingAnnonceId === annonce.id ? 'Envoi...' : 'Je suis int\u00e9ress\u00e9'}</Text></TouchableOpacity>
+                  <TouchableOpacity style={[s.footerBtn, s.footerBtnPrimary, (postulatingAnnonceId === annonce.id || Boolean(negotiations[annonce.id])) && s.footerBtnDisabled]} disabled={postulatingAnnonceId === annonce.id || Boolean(negotiations[annonce.id])} onPress={() => postulerOpportunite(annonce.id)} activeOpacity={0.85}><Text style={s.footerBtnPrimaryTxt}>{negotiations[annonce.id] ? 'Intérêt déjà envoyé' : postulatingAnnonceId === annonce.id ? 'Envoi...' : 'Je suis intéressé'}</Text></TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity style={[s.footerBtn, s.footerBtnGhost, s.footerBtnSingle]} onPress={() => setExpandedOpportunityId(annonce.id)} activeOpacity={0.85}><Text style={s.footerBtnGhostTxt}>Voir</Text></TouchableOpacity>
@@ -464,17 +463,17 @@ export default function MissionsServeurScreen() {
           ))}</View>
         )}
 
-        <View style={s.sectionHeader}><Text style={s.sectionTitle}>Votre activit\u00e9</Text></View>
+        <View style={s.sectionHeader}><Text style={s.sectionTitle}>Votre activité</Text></View>
         <View style={s.perfGrid}>
           <View style={s.perfMain}>
-            <Text style={s.perfEyebrow}>Fiabilit\u00e9</Text>
+            <Text style={s.perfEyebrow}>Fiabilité</Text>
             <Text style={s.perfBig}>{taux}%</Text>
             <View style={[s.perfBadge, { backgroundColor: tone.bg, borderColor: tone.border }]}><Text style={[s.perfBadgeTxt, { color: tone.text }]}>{tauxLabel(taux)}</Text></View>
             <View style={s.progressTrack}><View style={[s.progressFill, { width: `${taux}%` as any }]} /></View>
           </View>
           <View style={s.perfSide}>
             <View style={s.perfSmall}><Text style={s.perfSmallIcon}>\u2605</Text><Text style={s.perfSmallVal}>{serveur.score != null ? serveur.score.toFixed(1) : '-'}</Text><Text style={s.perfSmallLbl}>Note</Text></View>
-            <View style={[s.perfSmall, s.perfSmallSpacing]}><Text style={s.perfSmallIcon}>M</Text><Text style={s.perfSmallVal}>{serveur.missions_realisees ?? 0}</Text><Text style={s.perfSmallLbl}>R\u00e9alis\u00e9es</Text></View>
+            <View style={[s.perfSmall, s.perfSmallSpacing]}><Text style={s.perfSmallIcon}>M</Text><Text style={s.perfSmallVal}>{serveur.missions_realisees ?? 0}</Text><Text style={s.perfSmallLbl}>Réalisées</Text></View>
           </View>
         </View>
       </ScrollView>
@@ -493,7 +492,7 @@ export default function MissionsServeurScreen() {
               <Text style={s.modalInfoValue}>{negotiationEligibility?.baseRate ?? negotiationTarget?.salaire}{EURO}/h brut</Text>
             </View>
             <View style={s.modalInfoCard}>
-              <Text style={s.modalInfoLabel}>Tarif n\u00e9goci\u00e9 maximum</Text>
+              <Text style={s.modalInfoLabel}>Tarif négocié maximum</Text>
               <Text style={s.modalInfoValue}>{negotiationEligibility?.maxAllowedRate ?? negotiationTarget?.salaire}{EURO}/h brut</Text>
             </View>
             <Text style={s.modalHelp}>Une seule contre-offre est possible pour cette mission.</Text>
@@ -534,6 +533,13 @@ const s = StyleSheet.create({
   negotiationBanner: { backgroundColor: C.terraBg, borderWidth: 1, borderColor: C.terraBd, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10 },
   negotiationBannerText: { fontSize: 12, color: C.terra, fontWeight: '700' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }, tag: { backgroundColor: C.cardSoft, borderWidth: 1, borderColor: C.borderSoft, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 }, tagTxt: { fontSize: 11, color: C.textSoft, fontWeight: '500' }, salaireRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 2 }, salaire: { fontSize: 22, fontWeight: '800', color: C.title, letterSpacing: -0.5 }, salaireLbl: { fontSize: 12, color: C.textMuted },
+  detailList: { gap: 8, marginBottom: 12 },
+  detailListCompact: { gap: 5, marginTop: 7 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, paddingVertical: 2 },
+  detailRowCompact: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  detailLabel: { fontSize: 11, color: C.textMuted, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  detailValue: { flex: 1, textAlign: 'right', fontSize: 12, color: C.title, fontWeight: '600' },
+  detailValueStrong: { flex: 1, textAlign: 'right', fontSize: 13, color: C.title, fontWeight: '800' },
   negotiationHint: { marginTop: 4, marginBottom: 8, fontSize: 12, color: C.terra, fontWeight: '700' },
   statusStrip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
   statusStripLabel: { fontSize: 11, color: C.textMuted, fontWeight: '800', textTransform: 'uppercase' },

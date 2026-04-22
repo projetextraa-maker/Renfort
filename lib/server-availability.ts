@@ -61,11 +61,11 @@ export function getServerBusySlotMessage(
   slot: MissionSlot | null | undefined,
   audience: 'self' | 'profile' = 'profile'
 ): string {
-  const subject = audience === 'self' ? 'Vous etes deja engage' : 'Ce profil est deja engage'
+  const subject = audience === 'self' ? 'Vous êtes déjà engagé' : 'Ce profil est déjà engagé'
   if (slot === 'midday') return `${subject} sur ce midi.`
   if (slot === 'evening') return `${subject} sur ce soir.`
   if (slot === 'full') return `${subject} sur cette journee.`
-  return `${subject} sur ce creneau.`
+  return `${subject} sur ce créneau.`
 }
 
 export function isServerAvailableFromData(input: {

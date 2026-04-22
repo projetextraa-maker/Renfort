@@ -52,6 +52,10 @@ type MissionWorkflowResult =
   | { ok: true; changed: boolean }
   | { ok: false; reason: 'not_found' | 'invalid_status' | 'update_failed' | 'blocked'; message?: string }
 
+function logMissionWorkflowSchemaDependency(step: string, detail: string, extra?: Record<string, unknown>) {
+  console.warn(`mission-workflow:${step}`, { detail, ...(extra ?? {}) })
+}
+
 function isMissingDpaeSchemaError(error: unknown): boolean {
   const message = String((error as { message?: string } | null)?.message ?? '').toLowerCase()
   return message.includes("dpae_done") && message.includes('does not exist')
@@ -410,8 +414,7 @@ async function finalizeMissionSelectionWorkflow(input: {
   }
 
   const engagementPatch: Record<string, unknown> = {
-    status: 'confirmed',
-    confirmed_at: new Date().toISOString(),
+    selected_at: new Date().toISOString(),
   }
   if (negotiatedRate != null) {
     engagementPatch.agreed_hourly_rate = negotiatedRate
@@ -430,8 +433,15 @@ async function finalizeMissionSelectionWorkflow(input: {
   }
 
   const draftContractResult = await createDraftContractForEngagement(engagement.id)
-  if (!draftContractResult.ok && draftContractResult.reason !== 'schema_unavailable') {
-    console.warn('finalizeMissionSelectionWorkflow contract bootstrap warning', draftContractResult.message)
+  if (!draftContractResult.ok) {
+    if (draftContractResult.reason === 'schema_unavailable') {
+      logMissionWorkflowSchemaDependency('contract_bootstrap', draftContractResult.message, {
+        annonceId: input.annonceId,
+        engagementId: engagement.id,
+      })
+    } else {
+      console.warn('finalizeMissionSelectionWorkflow contract bootstrap warning', draftContractResult.message)
+    }
   }
 
   await supabase
@@ -961,6 +971,11 @@ export async function markMissionDpaeDone(annonceId: string): Promise<MissionWor
       if (dpaeRecordError && !isMissingDpaeRecordsSchemaError(dpaeRecordError)) {
         return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
       }
+      if (isMissingDpaeRecordsSchemaError(dpaeRecordError)) {
+        logMissionWorkflowSchemaDependency('dpae_records_update', 'La table dpae_records est absente, fallback legacy utilisé.', {
+          annonceId,
+        })
+      }
     }
 
     const { error } = await supabase
@@ -976,6 +991,9 @@ export async function markMissionDpaeDone(annonceId: string): Promise<MissionWor
 
     if (error) {
       if (isMissingDpaeAuditSchemaError(error)) {
+        logMissionWorkflowSchemaDependency('dpae_audit_columns', 'Les colonnes d’audit DPAE sont absentes sur annonces, fallback minimal utilisé.', {
+          annonceId,
+        })
         const { error: fallbackError } = await supabase
           .from('annonces')
           .update({ dpae_done: true })
@@ -1075,6 +1093,7 @@ export async function markMissionCheckOut(annonceId: string): Promise<MissionWor
   const { error } = await supabase
     .from('annonces')
     .update({
+      statut: 'completed',
       check_in_status: 'checked_out',
       checked_out_at: nowIso,
       payment_status: 'released',
@@ -1085,8 +1104,9 @@ export async function markMissionCheckOut(annonceId: string): Promise<MissionWor
   if (error) return { ok: false, reason: 'update_failed' }
   const engagement = await fetchActiveEngagementForMission(annonceId)
   if (engagement) {
-    await updateEngagementLifecycle(engagement.id, 'confirmed', {
+    await updateEngagementLifecycle(engagement.id, 'completed', {
       checked_out_at: nowIso,
+      completed_at: nowIso,
     })
   }
   return { ok: true, changed: true }
