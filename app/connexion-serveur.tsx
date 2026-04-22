@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ensureAccountProfileForUser } from '../lib/auth-profile-sync'
 import { getHomeRouteForRole, resolveAccountRole } from '../lib/auth-role'
 import { supabase } from '../lib/supabase'
 
@@ -36,8 +37,14 @@ export default function ConnexionServeur() {
     setLoading(false)
 
     if (error || !data.user) {
+      if (error) console.error('connexion serveur signIn error', error)
       Alert.alert('Erreur', 'Email ou mot de passe incorrect')
       return
+    }
+
+    const profileSync = await ensureAccountProfileForUser(data.user)
+    if (!profileSync.ok) {
+      console.error('connexion serveur profile sync error', profileSync)
     }
 
     const accountRole = await resolveAccountRole(data.user.id, data.user.user_metadata?.account_role)

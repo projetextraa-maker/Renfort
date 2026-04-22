@@ -39,7 +39,7 @@ function posteColor(p: string) { const l = p.toLowerCase(); if (l.includes('bar'
 function formatDateFr(d: string) { try { return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) } catch { return d } }
 const formatDistance = (km: number) => (km < 1 ? '< 1 km' : `${Math.round(km)} km`)
 function tauxPresence(r: number, a: number, n: number) { void a; const total = r + n; if (total <= 0) return 100; return Math.max(0, Math.min(100, Math.round((r / total) * 100))) }
-const tauxLabel = (t: number) => (t >= 95 ? 'Tr?s fiable' : t >= 80 ? 'Fiable' : 'En progression')
+const tauxLabel = (t: number) => (t >= 95 ? 'Très fiable' : t >= 80 ? 'Fiable' : 'En progression')
 function getPresenceTone(t: number) { if (t >= 95) return { bg: '#E8F5ED', border: '#CFE7D8', text: C.accent }; if (t >= 80) return { bg: '#F7EEDC', border: '#E8D4AD', text: C.gold }; return { bg: '#F3EEE6', border: '#E5D8C7', text: '#8B6F47' } }
 const initialesAvatar = (p: string, n: string) => `${p?.[0] ?? ''}${n?.[0] ?? ''}`.toUpperCase()
 function buildMissionValidationSnapshot(mission: MissionActive, contract: ContractRecord | null): MissionValidationSnapshot { return { statut: mission.statut, presence_confirmation_status: mission.presence_confirmation_status ?? null, contract_status: contract?.status ?? null, payment_status: mission.payment_status ?? null, check_in_status: mission.check_in_status ?? null, dpae_done: mission.dpae_done ?? null, dpae_status: mission.dpae_status ?? null, date: mission.date, heure_debut: mission.heure_debut, heure_fin: mission.heure_fin, engagement_status: mission.engagement_status ?? null, engagement_checked_in_at: mission.checked_in_at ?? null, engagement_checked_out_at: mission.checked_out_at ?? null } }

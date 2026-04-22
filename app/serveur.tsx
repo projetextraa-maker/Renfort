@@ -33,7 +33,7 @@ export default function ServeurScreen() {
           <Text style={styles.eyebrow}>RENFORT</Text>
           <Text style={styles.title}>Chercher une mission</Text>
           <Text style={styles.subtitle}>
-            Accedez a des extras pres de vous, rapidement.
+            Accédez à des extras près de vous, rapidement.
           </Text>
         </View>
 

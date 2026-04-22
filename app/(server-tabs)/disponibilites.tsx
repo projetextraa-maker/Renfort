@@ -138,7 +138,7 @@ export default function DisponibilitesServeurScreen() {
     setAvailabilities((prev) => [...prev, ...nouveaux])
   }
 
-  const toggleJournee = (jour: AvailabilityDayKey) => {
+  const toggleJournée = (jour: AvailabilityDayKey) => {
     if (isFullDaySelected(jour)) {
       setAvailabilities((prev) => prev.filter((item) => item.jour !== jour))
       return
@@ -176,10 +176,10 @@ export default function DisponibilitesServeurScreen() {
       const result = await replaceServeurDisponibilitesHebdo(serveurId, availabilities)
       if (!result.ok) {
         console.error('disponibilites save error', result.error)
-        Alert.alert('Erreur', getFriendlyWriteError(result.error, 'Impossible de sauvegarder les disponibilites pour le moment.'))
+        Alert.alert('Erreur', getFriendlyWriteError(result.error, 'Impossible de sauvegarder les disponibilités pour le moment.'))
         return
       }
-      Alert.alert('Succes', 'Disponibilites mises a jour !')
+      Alert.alert('Succès', 'Disponibilités mises à jour !')
     } catch {
       Alert.alert('Erreur', 'Impossible de sauvegarder.')
     } finally {
@@ -198,14 +198,14 @@ export default function DisponibilitesServeurScreen() {
     }
     if (disponible && !hasSlots) {
       return {
-        text: 'Ajoutez des creneaux pour etre visible',
+        text: 'Ajoutez des créneaux pour être visible',
         color: C.amber,
         bg: C.amberBg,
         bd: C.amberBd,
       }
     }
     return {
-      text: 'Profil masque aux patrons',
+      text: 'Profil masqué aux patrons',
       color: C.textMuted,
       bg: C.cardSoft,
       bd: C.border,
@@ -218,15 +218,15 @@ export default function DisponibilitesServeurScreen() {
     <ScrollView style={s.screen} contentContainerStyle={s.content}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      <Text style={s.overline}>DISPONIBILITES</Text>
+      <Text style={s.overline}>DISPONIBILITÉS</Text>
       <Text style={s.pageTitle}>Votre calendrier</Text>
-      <Text style={s.pageSub}>Gerez ici votre visibilite et les creneaux ou vous souhaitez apparaitre.</Text>
+      <Text style={s.pageSub}>Gérez ici votre visibilité et les créneaux où vous souhaitez apparaître.</Text>
 
       <View style={s.card}>
         <View style={s.toggleRow}>
           <View style={{ flex: 1 }}>
             <Text style={s.cardTitle}>Visible aux patrons</Text>
-            <Text style={s.cardSub}>Interrupteur de visibilite global</Text>
+            <Text style={s.cardSub}>Interrupteur de visibilité global</Text>
           </View>
           <Switch
             value={disponible}
@@ -247,7 +247,7 @@ export default function DisponibilitesServeurScreen() {
         <View style={s.calendarHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.cardTitle}>Mon calendrier</Text>
-            <Text style={s.cardSub}>Creneaux ou vous etes habituellement disponible</Text>
+            <Text style={s.cardSub}>Créneaux où vous êtes habituellement disponible</Text>
           </View>
 
           <View style={s.countBadge}>
@@ -297,12 +297,12 @@ export default function DisponibilitesServeurScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[s.slotBtn, s.slotBtnJournee, tousJourCoches && s.slotBtnActive]}
-                  onPress={() => toggleJournee(day.key)}
+                  style={[s.slotBtn, s.slotBtnJournée, tousJourCoches && s.slotBtnActive]}
+                  onPress={() => toggleJournée(day.key)}
                   activeOpacity={0.75}
                 >
-                  <Text style={[s.slotTxt, s.slotTxtJournee, tousJourCoches && s.slotTxtActive]}>
-                    Journee
+                  <Text style={[s.slotTxt, s.slotTxtJournée, tousJourCoches && s.slotTxtActive]}>
+                    Journée
                   </Text>
                 </TouchableOpacity>
 
@@ -328,7 +328,7 @@ export default function DisponibilitesServeurScreen() {
           activeOpacity={0.88}
         >
           <Text style={s.saveBtnTxt}>
-            {saving ? 'Sauvegarde...' : 'Sauvegarder mes disponibilites'}
+            {saving ? 'Sauvegarde...' : 'Sauvegarder mes disponibilités'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -474,7 +474,7 @@ const s = StyleSheet.create({
     borderColor: C.terra,
     borderWidth: 1,
   },
-  slotBtnJournee: {
+  slotBtnJournée: {
     flex: 1.2,
     backgroundColor: '#F1EBE3',
     borderColor: '#DDD2C4',
@@ -482,7 +482,7 @@ const s = StyleSheet.create({
   slotTxt: { fontSize: 10, fontWeight: '700', color: '#4F453D' },
   slotTxtActive: { color: '#FFFFFF' },
   slotTxtLinkedActive: { color: '#FFFFFF' },
-  slotTxtJournee: { color: '#4F453D', fontWeight: '800' },
+  slotTxtJournée: { color: '#4F453D', fontWeight: '800' },
   saveBtn: {
     backgroundColor: C.accent,
     borderRadius: 14,

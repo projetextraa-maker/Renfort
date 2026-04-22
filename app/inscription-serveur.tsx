@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ensureAccountProfileForUser } from '../lib/auth-profile-sync'
 import { getHomeRouteForRole, getLoginRouteForRole } from '../lib/auth-role'
 import { searchFrenchCities, type FrenchCityOption } from '../lib/french-postal'
 import { resolveReferrerIdFromCode } from '../lib/referrals'
@@ -26,6 +27,7 @@ export default function InscriptionServeur() {
   const [nom, setNom] = useState('')
   const [email, setEmail] = useState('')
   const [telephone, setTelephone] = useState('')
+  const [emailError, setEmailError] = useState('')
   const [locationQuery, setLocationQuery] = useState('')
   const [postalCode, setPostalCode] = useState('')
   const [ville, setVille] = useState('')
@@ -35,6 +37,24 @@ export default function InscriptionServeur() {
   const [selectedCity, setSelectedCity] = useState<FrenchCityOption | null>(null)
   const [citiesLoading, setCitiesLoading] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+
+  const handleResetPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert('Information', 'Renseignez votre email pour recevoir le lien de réinitialisation.')
+      return
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim())
+    if (error) {
+      console.error('inscription serveur resetPasswordForEmail error', error)
+      Alert.alert('Erreur', "Impossible d'envoyer l'email de réinitialisation pour le moment.")
+      return
+    }
+
+    Alert.alert('Email envoyé', 'Un lien de réinitialisation vient d’être envoyé à votre adresse email.')
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -82,6 +102,11 @@ export default function InscriptionServeur() {
       return
     }
 
+    if (!isValidEmail(email)) {
+      setEmailError('Veuillez entrer une adresse email valide')
+      return
+    }
+
     setLoading(true)
 
     let referredBy: string | null = null
@@ -115,9 +140,34 @@ export default function InscriptionServeur() {
     })
 
     if (authError) {
+      console.error('inscription serveur auth.signUp error', authError)
       setLoading(false)
+      const lower = String(authError.message ?? '').toLowerCase()
+      if (lower.includes('user already registered') || lower.includes('already registered')) {
+        Alert.alert(
+          'Compte existant',
+          'Un compte existe déjà avec cet email. Connectez-vous.',
+          [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Mot de passe oublié', onPress: () => void handleResetPassword() },
+            { text: 'Se connecter', onPress: () => router.push('/connexion-serveur') },
+          ]
+        )
+        return
+      }
+
       Alert.alert('Erreur', getFriendlySignupError(authError))
       return
+    }
+
+    if (data.user && data.session) {
+      const profileSync = await ensureAccountProfileForUser(data.user)
+      if (!profileSync.ok) {
+        console.error('inscription serveur profile sync error', profileSync)
+        setLoading(false)
+        Alert.alert('Erreur', "Le compte a été créé, mais le profil serveur n'a pas pu être initialisé.")
+        return
+      }
     }
 
     setLoading(false)
@@ -162,7 +212,19 @@ export default function InscriptionServeur() {
           <TextInput style={styles.input} placeholder="Ex : Martin" placeholderTextColor="#9A9388" value={nom} onChangeText={setNom} />
 
           <Text style={styles.label}>Email</Text>
-          <TextInput style={styles.input} placeholder="thomas@email.fr" placeholderTextColor="#9A9388" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+          <TextInput
+            style={[styles.input, emailError ? styles.inputError : null]}
+            placeholder="thomas@email.fr"
+            placeholderTextColor="#9A9388"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={(value) => {
+              setEmail(value)
+              if (!value.trim() || isValidEmail(value)) setEmailError('')
+            }}
+          />
+          {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
           <Text style={styles.label}>Téléphone</Text>
           <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={setTelephone} />
@@ -265,6 +327,16 @@ const styles = StyleSheet.create({
     color: C.title,
     backgroundColor: '#FFFCF8',
     marginBottom: 18,
+  },
+  inputError: {
+    borderColor: '#C84B4B',
+  },
+  fieldError: {
+    fontSize: 12,
+    color: '#C84B4B',
+    fontWeight: '600',
+    marginTop: -10,
+    marginBottom: 14,
   },
   cityOptionsWrap: { marginTop: -8, marginBottom: 18, gap: 8 },
   cityHelper: { fontSize: 13, color: C.muted, lineHeight: 18 },

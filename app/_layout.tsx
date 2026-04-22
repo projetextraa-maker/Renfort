@@ -1,6 +1,7 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
+import { ensureAccountProfileForUser } from '../lib/auth-profile-sync'
 import { getHomeRouteForRole, getLoginRouteForRole, getRequiredRoleForSegments, resolveAccountRole } from '../lib/auth-role'
 import { enregistrerNotifications, shouldRetryPushRegistration } from '../lib/notifications'
 import { supabase } from '../lib/supabase'
@@ -46,6 +47,11 @@ export default function RootLayout() {
       if (!session?.user) {
         router.replace(getLoginRouteForRole(requiredRole))
         return
+      }
+
+      const profileSync = await ensureAccountProfileForUser(session.user)
+      if (!profileSync.ok && profileSync.reason !== 'missing_role') {
+        console.error('root layout profile sync error', profileSync)
       }
 
       const actualRole = await resolveAccountRole(
