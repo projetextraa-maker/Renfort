@@ -155,3 +155,36 @@ export async function ensureAccountProfileForUser(user: User | null | undefined)
     ? ensurePatronProfile(user, user.user_metadata as PatronMetadata)
     : ensureServeurProfile(user, user.user_metadata as ServeurMetadata)
 }
+
+export async function inspectAccountStateForUser(user: User | null | undefined) {
+  if (!user) return { ok: false as const, reason: 'missing_user' }
+
+  const role = normalizeRole(user.user_metadata?.account_role)
+  const [
+    { data: patronRow, error: patronError },
+    { data: serveurRow, error: serveurError },
+  ] = await Promise.all([
+    supabase.from('patrons').select('id').eq('id', user.id).maybeSingle(),
+    supabase.from('serveurs').select('id').eq('id', user.id).maybeSingle(),
+  ])
+
+  if (patronError) {
+    console.error('inspectAccountStateForUser patron fetch error', patronError)
+    return { ok: false as const, reason: 'fetch_patron_failed', error: patronError }
+  }
+
+  if (serveurError) {
+    console.error('inspectAccountStateForUser serveur fetch error', serveurError)
+    return { ok: false as const, reason: 'fetch_serveur_failed', error: serveurError }
+  }
+
+  const etablissements = patronRow?.id ? await fetchEtablissementsForPatron(user.id) : []
+
+  return {
+    ok: true as const,
+    role,
+    patronExists: Boolean(patronRow?.id),
+    serveurExists: Boolean(serveurRow?.id),
+    etablissementCount: etablissements.length,
+  }
+}

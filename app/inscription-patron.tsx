@@ -1,11 +1,11 @@
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { ensureAccountProfileForUser } from '../lib/auth-profile-sync'
+import { ensureAccountProfileForUser, inspectAccountStateForUser } from '../lib/auth-profile-sync'
 import { getHomeRouteForRole, getLoginRouteForRole } from '../lib/auth-role'
 import { searchFrenchCities, type FrenchCityOption } from '../lib/french-postal'
 import { getFriendlySignupError } from '../lib/supabase-errors'
-import { supabase } from '../lib/supabase'
+import { supabase, SUPABASE_PROJECT_REF, SUPABASE_URL } from '../lib/supabase'
 
 const C = {
   bg: '#F7F4EE',
@@ -55,6 +55,91 @@ export default function InscriptionPatron() {
     }
 
     Alert.alert('Email envoyé', 'Un lien de réinitialisation vient d’être envoyé à votre adresse email.')
+  }
+
+  const handleRecoverExistingPatronAccount = async () => {
+    console.log('[signup:patron] existing-account recovery start', { email })
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: motDePasse,
+    })
+
+    console.log('[signup:patron] existing-account recovery auth result', {
+      ok: !error,
+      message: error?.message ?? null,
+      hasUser: Boolean(data.user),
+      hasSession: Boolean(data.session),
+    })
+
+    if (error || !data.user || !data.session) {
+      setSubmitError("Un compte existe déjà avec cet email. Connectez-vous ou réinitialisez votre mot de passe.")
+      Alert.alert(
+        'Compte existant',
+        "Cet email est déjà utilisé. Connectez-vous avec votre mot de passe ou réinitialisez-le si besoin.",
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Mot de passe oublié', onPress: () => void handleResetPassword() },
+          { text: 'Se connecter', onPress: () => router.push('/connexion-patron') },
+        ]
+      )
+      return
+    }
+
+    console.log('[signup:patron] existing-account inspection start', { userId: data.user.id })
+    const accountState = await inspectAccountStateForUser(data.user)
+    console.log('[signup:patron] existing-account inspection result', accountState)
+
+    if (!accountState.ok) {
+      setSubmitError("Le compte existe déjà. Connectez-vous pour continuer.")
+      router.replace('/connexion-patron')
+      return
+    }
+
+    if (accountState.role && accountState.role !== 'patron') {
+      setSubmitError("Cet email est déjà associé à un compte serveur. Connectez-vous avec le bon espace.")
+      Alert.alert(
+        'Compte déjà existant',
+        "Cet email est déjà associé à un compte serveur. Connectez-vous depuis l'espace serveur.",
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Se connecter', onPress: () => router.push('/connexion-serveur') },
+        ]
+      )
+      return
+    }
+
+    console.log('[signup:patron] existing-account profile sync start', { userId: data.user.id })
+    const profileSync = await ensureAccountProfileForUser(data.user)
+    console.log('[signup:patron] existing-account profile sync result', profileSync)
+
+    if (!profileSync.ok) {
+      setSubmitError("Le compte existe déjà, mais sa récupération a échoué. Connectez-vous pour finaliser la reprise.")
+      Alert.alert(
+        'Compte existant',
+        "Le compte Auth existe déjà, mais son profil patron n'a pas pu être réparé automatiquement. Connectez-vous pour finaliser la reprise.",
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Se connecter', onPress: () => router.push('/connexion-patron') },
+        ]
+      )
+      return
+    }
+
+    const repairedState = await inspectAccountStateForUser(data.user)
+    console.log('[signup:patron] existing-account repaired state', repairedState)
+    setSubmitError('')
+    Alert.alert(
+      'Compte récupéré',
+      repairedState.ok && (!repairedState.patronExists || repairedState.etablissementCount === 0)
+        ? "Votre compte existait déjà dans Auth. Le profil patron a été réparé et vous pouvez continuer."
+        : "Votre compte existe déjà. Vous êtes maintenant connecté.",
+      [
+        {
+          text: 'Continuer',
+          onPress: () => router.replace(getHomeRouteForRole('patron')),
+        },
+      ]
+    )
   }
 
   useEffect(() => {
@@ -148,10 +233,16 @@ export default function InscriptionPatron() {
     setCityError('')
     setSubmitError('')
     setLoading(true)
-    console.log('[signup:patron] signup start', { email })
+    console.log('[signup:patron] signup start', {
+      supabaseUrl: SUPABASE_URL,
+      supabaseProjectRef: SUPABASE_PROJECT_REF,
+      emailRaw: email,
+      emailTrimmed: email.trim(),
+      role: 'patron',
+    })
 
     const { data, error: authError } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password: motDePasse,
       options: {
         data: {
@@ -173,16 +264,9 @@ export default function InscriptionPatron() {
       setLoading(false)
       const lower = String(authError.message ?? '').toLowerCase()
       if (lower.includes('user already registered') || lower.includes('already registered')) {
-        setSubmitError('Un compte existe déjà avec cet email. Connectez-vous.')
-        Alert.alert(
-          'Compte existant',
-          'Un compte existe déjà avec cet email. Connectez-vous.',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Mot de passe oublié', onPress: () => void handleResetPassword() },
-            { text: 'Se connecter', onPress: () => router.push('/connexion-patron') },
-          ]
-        )
+        setLoading(true)
+        await handleRecoverExistingPatronAccount()
+        setLoading(false)
         return
       }
 
