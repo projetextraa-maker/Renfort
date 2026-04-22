@@ -119,7 +119,7 @@ async function ensurePatronProfile(user: User, metadata: PatronMetadata): Promis
 
   const etablissements = await fetchEtablissementsForPatron(user.id)
   if (etablissements.length === 0) {
-    const etablissementPayload = buildCanonicalEtablissementWritePayload({
+    const canonicalPayload = buildCanonicalEtablissementWritePayload({
       user_id: user.id,
       nom: toNullableString(metadata.nom_restaurant) ?? 'Mon etablissement',
       adresse: null,
@@ -128,6 +128,11 @@ async function ensurePatronProfile(user: User, metadata: PatronMetadata): Promis
       lng: toNullableNumber(metadata.lng),
       is_default: true,
     })
+
+    const etablissementPayload = {
+      ...canonicalPayload,
+      name: canonicalPayload.nom,
+    }
 
     console.log('ensurePatronProfile etablissement insert payload', etablissementPayload)
 
