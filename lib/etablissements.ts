@@ -69,6 +69,18 @@ export function buildEtablissementWritePayload(input: EtablissementDraftInput) {
   }
 }
 
+export function buildCanonicalEtablissementWritePayload(input: EtablissementDraftInput) {
+  return {
+    user_id: input.user_id,
+    nom: input.nom,
+    adresse: input.adresse,
+    ville: input.ville,
+    lat: input.lat,
+    lng: input.lng,
+    is_default: input.is_default,
+  }
+}
+
 function normalizeCanonicalRow(row: CanonicalEtablissementRow): Etablissement | null {
   if (!row.id || !row.user_id || !row.nom || !row.ville) return null
 

@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js'
-import { buildEtablissementWritePayload, fetchEtablissementsForPatron } from './etablissements'
+import { buildCanonicalEtablissementWritePayload, fetchEtablissementsForPatron } from './etablissements'
 import { buildReferralCode } from './referrals'
 import { supabase } from './supabase'
 
@@ -27,6 +27,20 @@ type ServeurMetadata = {
   referred_by?: string | null
 }
 
+type SyncFailure = {
+  ok: false
+  reason: string
+  error?: unknown
+}
+
+type SyncSuccess = {
+  ok: true
+  warning?: 'insert_etablissement_failed'
+  etablissementErrorMessage?: string
+}
+
+type SyncResult = SyncFailure | SyncSuccess
+
 function normalizeRole(metadataRole: unknown): SupportedRole | null {
   return metadataRole === 'patron' || metadataRole === 'serveur' ? metadataRole : null
 }
@@ -50,7 +64,28 @@ function toNullableUuid(value: unknown) {
     : null
 }
 
-async function ensurePatronProfile(user: User, metadata: PatronMetadata) {
+function getErrorMessage(error: unknown) {
+  return String(
+    (error as any)?.message
+    ?? (error as any)?.error_description
+    ?? (error as any)?.details
+    ?? ''
+  )
+}
+
+function getErrorCode(error: unknown) {
+  return (error as any)?.code ?? null
+}
+
+function getErrorDetails(error: unknown) {
+  return (error as any)?.details ?? null
+}
+
+function getErrorHint(error: unknown) {
+  return (error as any)?.hint ?? null
+}
+
+async function ensurePatronProfile(user: User, metadata: PatronMetadata): Promise<SyncResult> {
   const { data: existing, error: existingError } = await supabase
     .from('patrons')
     .select('id')
@@ -59,7 +94,7 @@ async function ensurePatronProfile(user: User, metadata: PatronMetadata) {
 
   if (existingError) {
     console.error('ensurePatronProfile existing fetch error', existingError)
-    return { ok: false as const, reason: 'fetch_patron_failed', error: existingError }
+    return { ok: false, reason: 'fetch_patron_failed', error: existingError }
   }
 
   if (!existing?.id) {
@@ -78,36 +113,49 @@ async function ensurePatronProfile(user: User, metadata: PatronMetadata) {
     const { error: upsertError } = await supabase.from('patrons').upsert(payload)
     if (upsertError) {
       console.error('ensurePatronProfile upsert error', upsertError, payload)
-      return { ok: false as const, reason: 'upsert_patron_failed', error: upsertError }
+      return { ok: false, reason: 'upsert_patron_failed', error: upsertError }
     }
   }
 
   const etablissements = await fetchEtablissementsForPatron(user.id)
   if (etablissements.length === 0) {
+    const etablissementPayload = buildCanonicalEtablissementWritePayload({
+      user_id: user.id,
+      nom: toNullableString(metadata.nom_restaurant) ?? 'Mon etablissement',
+      adresse: null,
+      ville: toNullableString(metadata.ville) ?? 'Ville a renseigner',
+      lat: toNullableNumber(metadata.lat),
+      lng: toNullableNumber(metadata.lng),
+      is_default: true,
+    })
+
+    console.log('ensurePatronProfile etablissement insert payload', etablissementPayload)
+
     const { error: etablissementError } = await supabase
       .from('etablissements')
-      .insert(
-        buildEtablissementWritePayload({
-          user_id: user.id,
-          nom: toNullableString(metadata.nom_restaurant) ?? 'Mon établissement',
-          adresse: null,
-          ville: toNullableString(metadata.ville) ?? 'Ville à renseigner',
-          lat: toNullableNumber(metadata.lat),
-          lng: toNullableNumber(metadata.lng),
-          is_default: true,
-        })
-      )
+      .insert(etablissementPayload)
 
     if (etablissementError) {
-      console.error('ensurePatronProfile etablissement insert error', etablissementError)
-      return { ok: false as const, reason: 'insert_etablissement_failed', error: etablissementError }
+      console.error('ensurePatronProfile etablissement insert error', {
+        message: getErrorMessage(etablissementError),
+        code: getErrorCode(etablissementError),
+        details: getErrorDetails(etablissementError),
+        hint: getErrorHint(etablissementError),
+        payload: etablissementPayload,
+      })
+
+      return {
+        ok: true,
+        warning: 'insert_etablissement_failed',
+        etablissementErrorMessage: getErrorMessage(etablissementError),
+      }
     }
   }
 
-  return { ok: true as const }
+  return { ok: true }
 }
 
-async function ensureServeurProfile(user: User, metadata: ServeurMetadata) {
+async function ensureServeurProfile(user: User, metadata: ServeurMetadata): Promise<SyncResult> {
   const { data: existing, error: existingError } = await supabase
     .from('serveurs')
     .select('id')
@@ -116,7 +164,7 @@ async function ensureServeurProfile(user: User, metadata: ServeurMetadata) {
 
   if (existingError) {
     console.error('ensureServeurProfile existing fetch error', existingError)
-    return { ok: false as const, reason: 'fetch_serveur_failed', error: existingError }
+    return { ok: false, reason: 'fetch_serveur_failed', error: existingError }
   }
 
   if (!existing?.id) {
@@ -138,18 +186,18 @@ async function ensureServeurProfile(user: User, metadata: ServeurMetadata) {
     const { error: upsertError } = await supabase.from('serveurs').upsert(payload)
     if (upsertError) {
       console.error('ensureServeurProfile upsert error', upsertError, payload)
-      return { ok: false as const, reason: 'upsert_serveur_failed', error: upsertError }
+      return { ok: false, reason: 'upsert_serveur_failed', error: upsertError }
     }
   }
 
-  return { ok: true as const }
+  return { ok: true }
 }
 
-export async function ensureAccountProfileForUser(user: User | null | undefined) {
-  if (!user) return { ok: false as const, reason: 'missing_user' }
+export async function ensureAccountProfileForUser(user: User | null | undefined): Promise<SyncResult> {
+  if (!user) return { ok: false, reason: 'missing_user' }
 
   const role = normalizeRole(user.user_metadata?.account_role)
-  if (!role) return { ok: false as const, reason: 'missing_role' }
+  if (!role) return { ok: false, reason: 'missing_role' }
 
   return role === 'patron'
     ? ensurePatronProfile(user, user.user_metadata as PatronMetadata)
