@@ -62,7 +62,7 @@ export default function InscriptionPatron() {
       return
     }
 
-    Alert.alert('Email envoyÃ©', 'Un lien de rÃ©initialisation vient dâ€™Ãªtre envoyÃ© Ã  votre adresse email.')
+    Alert.alert('Email envoyÃ©', "Un lien de rÃ©initialisation vient d'Ãªtre envoyÃ© Ã  votre adresse email.")
   }
 
   const handleRecoverExistingPatronAccount = async () => {
@@ -121,10 +121,10 @@ export default function InscriptionPatron() {
     console.log('[signup:patron] existing-account profile sync result', profileSync)
 
     if (!profileSync.ok) {
-      setSubmitError("Le compte existe déjà, mais sa récupération a échoué. Connectez-vous pour finaliser la reprise.")
+      setSubmitError("Le compte existe dÃ©jÃ , mais sa rÃ©cupÃ©ration a Ã©chouÃ©. Connectez-vous pour finaliser la reprise.")
       Alert.alert(
         'Compte existant',
-        "Le compte Auth existe déjà, mais son profil patron n'a pas pu être réparé automatiquement. Connectez-vous pour finaliser la reprise.",
+        "Le compte Auth existe dÃ©jÃ , mais son profil patron n'a pas pu Ãªtre rÃ©parÃ© automatiquement. Connectez-vous pour finaliser la reprise.",
         [
           { text: 'Annuler', style: 'cancel' },
           { text: 'Se connecter', onPress: () => router.push('/connexion-patron') },
@@ -137,8 +137,8 @@ export default function InscriptionPatron() {
     console.log('[signup:patron] existing-account repaired state', repairedState)
     finishSignupFlow(
       repairedState.ok && (!repairedState.patronExists || repairedState.etablissementCount === 0)
-        ? "Votre compte existait déjà dans Auth. Le profil patron a été réparé. Redirection en cours..."
-        : "Votre compte existe déjà. Redirection en cours...",
+        ? "Votre compte existait dÃ©jÃ  dans Auth. Le profil patron a Ã©tÃ© rÃ©parÃ©. Redirection en cours..."
+        : "Votre compte existe dÃ©jÃ . Redirection en cours...",
       getHomeRouteForRole('patron')
     )
   }
@@ -219,8 +219,8 @@ export default function InscriptionPatron() {
         locationQuery,
         cityOptionsCount: cityOptions.length,
       })
-      setCityError('Veuillez sélectionner une ville dans la liste')
-      setSubmitError('Veuillez sélectionner une ville dans la liste avant de continuer.')
+      setCityError('Veuillez sÃ©lectionner une ville dans la liste')
+      setSubmitError('Veuillez sÃ©lectionner une ville dans la liste avant de continuer.')
       return
     }
 
@@ -290,13 +290,13 @@ export default function InscriptionPatron() {
       if (!profileSync.ok) {
         console.error('inscription patron profile sync error', profileSync)
         setLoading(false)
-        setSubmitError("Le compte a été créé, mais le profil patron n'a pas pu être initialisé.")
-        Alert.alert('Erreur', "Le compte a été créé, mais le profil patron n'a pas pu être initialisé.")
+        setSubmitError("Le compte a Ã©tÃ© crÃ©Ã©, mais le profil patron n'a pas pu Ãªtre initialisÃ©.")
+        Alert.alert('Erreur', "Le compte a Ã©tÃ© crÃ©Ã©, mais le profil patron n'a pas pu Ãªtre initialisÃ©.")
         return
       }
 
       if ('warning' in profileSync && profileSync.warning === 'insert_etablissement_failed') {
-        finishSignupFlow("Votre compte patron a bien été créé. L'établissement initial sera à compléter après connexion.", getHomeRouteForRole('patron'))
+        finishSignupFlow("Votre compte patron a bien Ã©tÃ© crÃ©Ã©. L'Ã©tablissement initial sera Ã  complÃ©ter aprÃ¨s connexion.", getHomeRouteForRole('patron'))
         return
       }
     }
@@ -305,11 +305,11 @@ export default function InscriptionPatron() {
     const hasSession = Boolean(data.session)
     console.log('[signup:patron] navigation start', { hasSession })
     if (hasSession) {
-      finishSignupFlow('Votre compte patron a bien été créé. Redirection en cours...', getHomeRouteForRole('patron'))
+      finishSignupFlow('Votre compte patron a bien Ã©tÃ© crÃ©Ã©. Redirection en cours...', getHomeRouteForRole('patron'))
       return
     }
 
-    finishSignupFlow('Votre compte a bien été créé. Confirmez votre email puis connectez-vous.', getLoginRouteForRole('patron'))
+    finishSignupFlow('Votre compte a bien Ã©tÃ© crÃ©Ã©. Confirmez votre email puis connectez-vous.', getLoginRouteForRole('patron'))
   }
 
   return (
@@ -322,7 +322,7 @@ export default function InscriptionPatron() {
         </TouchableOpacity>
 
         <Text style={styles.eyebrow}>RENFORT</Text>
-        <Text style={styles.title}>Créer un compte</Text>
+        <Text style={styles.title}>CrÃ©er un compte</Text>
         <Text style={styles.subtitle}>
           Lancez votre recherche et trouvez rapidement le bon profil.
         </Text>
@@ -331,7 +331,7 @@ export default function InscriptionPatron() {
           <Text style={styles.label}>Nom du restaurant</Text>
           <TextInput style={styles.input} placeholder="Ex : Brasserie du Vieux Port" placeholderTextColor="#9A9388" value={nomRestaurant} onChangeText={(value) => { setNomRestaurant(value); if (submitError) setSubmitError('') }} />
 
-          <Text style={styles.label}>Votre prénom</Text>
+          <Text style={styles.label}>Votre prÃ©nom</Text>
           <TextInput style={styles.input} placeholder="Ex : Jean" placeholderTextColor="#9A9388" value={prenom} onChangeText={(value) => { setPrenom(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Email</Text>
@@ -350,7 +350,7 @@ export default function InscriptionPatron() {
           />
           {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
-          <Text style={styles.label}>Téléphone</Text>
+          <Text style={styles.label}>TÃ©lÃ©phone</Text>
           <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={(value) => { setTelephone(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Ville ou code postal</Text>
@@ -376,7 +376,7 @@ export default function InscriptionPatron() {
               {citiesLoading ? (
                 <Text style={styles.cityHelper}>Recherche des suggestions...</Text>
               ) : cityOptions.length === 0 ? (
-                <Text style={styles.cityHelper}>Aucune ville trouvée</Text>
+                <Text style={styles.cityHelper}>Aucune ville trouvÃ©e</Text>
               ) : (
                 cityOptions.map((city) => {
                   const isSelected = selectedCity?.nom === city.nom && selectedCity?.codePostal === city.codePostal
@@ -398,7 +398,7 @@ export default function InscriptionPatron() {
           )}
 
           <Text style={styles.label}>Mot de passe</Text>
-          <TextInput style={styles.input} placeholder="Minimum 6 caractères" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
+          <TextInput style={styles.input} placeholder="Minimum 6 caractÃ¨res" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
 
           {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
           {submitSuccess ? <Text style={styles.submitSuccess}>{submitSuccess}</Text> : null}
