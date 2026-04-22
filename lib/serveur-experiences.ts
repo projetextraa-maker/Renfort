@@ -21,8 +21,8 @@ export const EXPERIENCE_DESCRIPTIONS_SUGGESTIONS = [
   'Restaurant traditionnel',
   'Gastronomique',
   'Bar',
-  'Evenementiel',
-  'Hotel',
+  'Événementiel',
+  'Hôtel',
   'Plage / saisonnier',
 ] as const
 
@@ -39,15 +39,15 @@ export function formatServeurExperience(experience: ServeurExperience): string {
 }
 
 export function getPrimaryServeurExperienceLabel(experiences: ServeurExperience[]): string {
-  if (experiences.length === 0) return 'Experiences a renseigner'
+  if (experiences.length === 0) return 'Expériences à renseigner'
   const [first] = experiences
-  if (!first) return 'Experiences a renseigner'
+  if (!first) return 'Expériences à renseigner'
   return `${first.poste} - ${first.duree}`
 }
 
 export function getServeurExperiencesBio(experiences: ServeurExperience[]): string {
   if (experiences.length === 0) {
-    return 'Aucune experience structuree renseignee pour le moment.'
+    return 'Aucune expérience structurée renseignée pour le moment.'
   }
 
   return experiences.map(formatServeurExperience).join('\n')

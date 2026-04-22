@@ -1,9 +1,14 @@
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { enregistrerNotifications, shouldRetryPushRegistration } from '../lib/notifications';
+import { Stack, useRouter, useSegments } from 'expo-router'
+import { StatusBar } from 'expo-status-bar'
+import { useEffect } from 'react'
+import { getHomeRouteForRole, getLoginRouteForRole, getRequiredRoleForSegments, resolveAccountRole } from '../lib/auth-role'
+import { enregistrerNotifications, shouldRetryPushRegistration } from '../lib/notifications'
+import { supabase } from '../lib/supabase'
 
 export default function RootLayout() {
+  const router = useRouter()
+  const segments = useSegments()
+
   useEffect(() => {
     let cancelled = false
 
@@ -23,12 +28,55 @@ export default function RootLayout() {
     return () => {
       cancelled = true
     }
-  }, []);
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const guardRoute = async () => {
+      const requiredRole = getRequiredRoleForSegments(segments)
+      if (!requiredRole) return
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (cancelled) return
+
+      if (!session?.user) {
+        router.replace(getLoginRouteForRole(requiredRole))
+        return
+      }
+
+      const actualRole = await resolveAccountRole(
+        session.user.id,
+        session.user.user_metadata?.account_role
+      )
+
+      if (cancelled) return
+
+      if (!actualRole) {
+        await supabase.auth.signOut()
+        if (!cancelled) router.replace('/')
+        return
+      }
+
+      if (actualRole !== requiredRole) {
+        router.replace(getHomeRouteForRole(actualRole))
+      }
+    }
+
+    guardRoute()
+
+    return () => {
+      cancelled = true
+    }
+  }, [router, segments])
 
   return (
     <>
       <Stack screenOptions={{ headerShown: false }} />
       <StatusBar style="auto" />
     </>
-  );
+  )
 }

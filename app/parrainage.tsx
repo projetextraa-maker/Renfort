@@ -25,11 +25,11 @@ function getNextReferralReward(missionsRealisees: number) {
   return REWARD_STEPS.find((step) => missionsRealisees < step.milestone) ?? null
 }
 
-function getRemainingMissionsText(missionsRealisees: number, nextMilestone: number) {
+function getNextBonusProgressText(missionsRealisees: number, nextMilestone: number) {
   const remaining = Math.max(nextMilestone - missionsRealisees, 0)
   return remaining <= 1
-    ? `Plus que ${remaining} mission pour debloquer le prochain bonus`
-    : `Plus que ${remaining} missions pour debloquer le prochain bonus`
+    ? `Encore ${remaining} mission pour debloquer le prochain bonus`
+    : `Encore ${remaining} missions pour debloquer le prochain bonus`
 }
 
 function getStepState(filleul: FilleulProgress, milestone: number) {
@@ -241,7 +241,7 @@ export default function ParrainageScreen() {
                 )}
                 {getNextReferralReward(filleul.missionsRealisees) && (
                   <Text style={s.filleulHint}>
-                    {getRemainingMissionsText(
+                    {getNextBonusProgressText(
                       filleul.missionsRealisees,
                       getNextReferralReward(filleul.missionsRealisees)!.milestone
                     )}

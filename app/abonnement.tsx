@@ -1,9 +1,7 @@
 import { useRouter } from 'expo-router'
-import { useState } from 'react'
-import { Alert, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { EURO } from '../lib/currency'
-import { getIncludedMissionsForPlan } from '../lib/subscription'
-import { supabase } from '../lib/supabase'
+import { useEffect, useRef, useState } from 'react'
+import { Animated, Easing, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { getPatronPlanDisplay, getPatronPlanOffer, type PatronBillingCycle } from '../lib/billing'
 
 const C = {
   bg: '#F7F4EE',
@@ -22,46 +20,42 @@ const C = {
 
 export default function AbonnementScreen() {
   const router = useRouter()
-  const [loadingPlan, setLoadingPlan] = useState<'pro' | 'pro_plus' | null>(null)
+  const [billingCycle, setBillingCycle] = useState<PatronBillingCycle>('semiannual')
+  const cycleAnim = useRef(new Animated.Value(1)).current
+  const featuredCardAnim = useRef(new Animated.Value(0.98)).current
+  const freeOffer = getPatronPlanOffer('none')
+  const proOffer = getPatronPlanDisplay('pro', billingCycle)
+  const proPlusOffer = getPatronPlanDisplay('pro_plus', billingCycle)
 
-  const activerAbonnement = async (plan: 'pro' | 'pro_plus') => {
-    try {
-      setLoadingPlan(plan)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        Alert.alert('Erreur', 'Utilisateur introuvable')
-        return
-      }
+  useEffect(() => {
+    cycleAnim.setValue(0)
+    Animated.timing(cycleAnim, {
+      toValue: 1,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start()
+  }, [billingCycle, cycleAnim])
 
-      const { error } = await supabase
-        .from('patrons')
-        .update({
-          abonnement: plan,
-          missions_incluses: getIncludedMissionsForPlan(plan),
-          missions_utilisees_ce_mois: 0,
-          missions_hors_forfait_ce_mois: 0,
-          date_debut_periode: new Date().toISOString(),
-        })
-        .eq('id', user.id)
+  useEffect(() => {
+    Animated.spring(featuredCardAnim, {
+      toValue: 1,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start()
+  }, [featuredCardAnim])
 
-      if (error) {
-        Alert.alert('Erreur', "Impossible d'activer l'abonnement")
-        return
-      }
-
-      Alert.alert(
-        'Abonnement active',
-        plan === 'pro' ? 'Abonnement Pro active' : 'Abonnement Pro+ active',
-        [{ text: 'OK', onPress: () => router.replace('/dashboard_patron') }]
-      )
-    } catch (e) {
-      console.error('activerAbonnement error:', e)
-      Alert.alert('Erreur', "Impossible d'activer l'abonnement")
-    } finally {
-      setLoadingPlan(null)
-    }
+  const priceAnimatedStyle = {
+    opacity: cycleAnim,
+    transform: [
+      {
+        translateY: cycleAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [6, 0],
+        }),
+      },
+    ],
   }
 
   return (
@@ -73,63 +67,141 @@ export default function AbonnementScreen() {
           <Text style={styles.backTxt}>Retour</Text>
         </TouchableOpacity>
 
-        <Text style={styles.eyebrow}>ABONNEMENT</Text>
-        <Text style={styles.title}>Choisissez la formule adaptee a votre etablissement</Text>
-        <Text style={styles.subtitle}>
-          Comparez les offres Renfort et choisissez la formule la plus adaptee a votre volume
-          de missions realisees.
+        <Text style={styles.title}>Choisissez votre formule</Text>
+        <Text style={styles.subtitle}>Une offre claire, simple et adaptée à votre rythme.</Text>
+
+        <View style={styles.cycleToggle}>
+          <Pressable
+            style={[styles.cycleChip, billingCycle === 'monthly' && styles.cycleChipActive]}
+            onPress={() => setBillingCycle('monthly')}
+            android_ripple={{ color: '#EDE4D8' }}
+          >
+            {({ pressed }) => (
+              <Animated.View style={[styles.cycleChipInner, pressed && styles.cycleChipPressed]}>
+                <Text style={[styles.cycleChipTxt, billingCycle === 'monthly' && styles.cycleChipTxtActive]}>Mensuel</Text>
+              </Animated.View>
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.cycleChip, billingCycle === 'semiannual' && styles.cycleChipActive]}
+            onPress={() => setBillingCycle('semiannual')}
+            android_ripple={{ color: '#F3DED0' }}
+          >
+            {({ pressed }) => (
+              <Animated.View style={[styles.cycleChipInner, pressed && styles.cycleChipPressed]}>
+                <Text style={[styles.cycleChipTxt, billingCycle === 'semiannual' && styles.cycleChipTxtActive]}>6 mois</Text>
+              </Animated.View>
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.cycleChip, billingCycle === 'annual' && styles.cycleChipActive]}
+            onPress={() => setBillingCycle('annual')}
+            android_ripple={{ color: '#EDE4D8' }}
+          >
+            {({ pressed }) => (
+              <Animated.View style={[styles.cycleChipInner, pressed && styles.cycleChipPressed]}>
+                <Text style={[styles.cycleChipTxt, billingCycle === 'annual' && styles.cycleChipTxtActive]}>Annuel</Text>
+              </Animated.View>
+            )}
+          </Pressable>
+        </View>
+
+        <Text style={styles.cycleHint}>
+          {billingCycle === 'semiannual'
+            ? 'Parfait pour la saison estivale'
+            : billingCycle === 'annual'
+              ? 'Pour une activité toute l’année'
+              : 'Flexible pour un usage ponctuel'}
         </Text>
 
-        <View style={[styles.card, styles.cardFeatured]}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeTxt}>Recommande</Text>
+        {billingCycle === 'monthly' && (
+          <View style={styles.card}>
+            <Text style={styles.planName}>{freeOffer.title}</Text>
+            <Animated.View style={priceAnimatedStyle}>
+              <Text style={styles.planPrice}>{freeOffer.priceLabel}</Text>
+              <Text style={styles.planHint}>{freeOffer.contextLabel}</Text>
+              <Text style={styles.planFeatureCompact}>{freeOffer.commissionLabel}</Text>
+            </Animated.View>
+            <Pressable
+              style={({ pressed }) => [styles.planBtn, styles.planBtnLight, pressed && styles.planBtnPressed]}
+              onPress={() => router.replace('/dashboard_patron')}
+            >
+              <Text style={[styles.planBtnTxt, styles.planBtnLightTxt]}>{freeOffer.ctaLabel}</Text>
+            </Pressable>
           </View>
-          <Text style={styles.planName}>Offre Pro</Text>
-          <Text style={styles.planPrice}>{`49${EURO} / mois`}</Text>
-          <Text style={styles.planFeature}>10 missions realisees incluses / mois</Text>
-          <Text style={styles.planFeature}>{`+5${EURO} par mission realisee supplementaire`}</Text>
-          <View style={[styles.annualBlock, styles.annualBlockFeatured]}>
-            <Text style={styles.annualPrice}>{`540${EURO} / an`}</Text>
-            <Text style={styles.annualHint}>1 mois offert avec l&apos;abonnement annuel</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.planBtn, styles.planBtnFeatured, loadingPlan === 'pro' && styles.planBtnDisabled]}
-            onPress={() => activerAbonnement('pro')}
-            activeOpacity={0.88}
-            disabled={loadingPlan !== null}
+        )}
+
+        <Animated.View
+          style={[
+            styles.card,
+            styles.cardFeatured,
+            {
+              transform: [{ scale: featuredCardAnim }],
+            },
+          ]}
+        >
+          {(proOffer.badgeLabel || proOffer.contextLabel) && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeTxt}>{proOffer.badgeLabel ?? proOffer.contextLabel}</Text>
+            </View>
+          )}
+          <Text style={styles.planName}>{proOffer.title}</Text>
+          <Animated.View style={priceAnimatedStyle}>
+            <Text style={styles.planPrice}>{proOffer.priceLabel}</Text>
+            <Text style={styles.planHint}>{proOffer.contextLabel}</Text>
+            <Text style={styles.planFeatureCompact}>{proOffer.commissionLabel}</Text>
+          </Animated.View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.planBtn,
+              styles.planBtnFeatured,
+              pressed && styles.planBtnPressed,
+            ]}
+            onPress={() =>
+              router.push({
+                pathname: '/abonnement-confirmation',
+                params: { plan: 'pro', cycle: billingCycle },
+              })
+            }
           >
-            <Text style={styles.planBtnTxt}>
-              {loadingPlan === 'pro' ? 'Activation...' : 'Passer au Pro'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <Text style={styles.planBtnTxt}>{proOffer.ctaLabel}</Text>
+          </Pressable>
+        </Animated.View>
 
         <View style={[styles.card, styles.cardProPlus]}>
-          <View style={styles.subtleBadge}>
-            <Text style={styles.subtleBadgeTxt}>Option avancee</Text>
-          </View>
-          <Text style={styles.planName}>Offre Pro+</Text>
-          <Text style={[styles.planPrice, styles.planPriceProPlus]}>{`89${EURO} / mois`}</Text>
-          <Text style={styles.planFeature}>25 missions realisees incluses / mois</Text>
-          <Text style={styles.planFeature}>{`+4${EURO} par mission realisee supplementaire`}</Text>
-          <View style={styles.annualBlock}>
-            <Text style={styles.annualPrice}>{`990${EURO} / an`}</Text>
-            <Text style={styles.annualHint}>1 mois offert avec l&apos;abonnement annuel</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.planBtn, styles.planBtnSecondary, loadingPlan === 'pro_plus' && styles.planBtnDisabled]}
-            onPress={() => activerAbonnement('pro_plus')}
-            activeOpacity={0.88}
-            disabled={loadingPlan !== null}
+          {(proPlusOffer.badgeLabel || proPlusOffer.contextLabel) && (
+            <View style={styles.subtleBadge}>
+              <Text style={styles.subtleBadgeTxt}>{proPlusOffer.badgeLabel ?? proPlusOffer.contextLabel}</Text>
+            </View>
+          )}
+          <Text style={styles.planName}>{proPlusOffer.title}</Text>
+          <Animated.View style={priceAnimatedStyle}>
+            <Text style={[styles.planPrice, styles.planPriceProPlus]}>{proPlusOffer.priceLabel}</Text>
+            <Text style={styles.planHint}>{proPlusOffer.contextLabel}</Text>
+            <Text style={styles.planFeatureCompact}>{proPlusOffer.commissionLabel}</Text>
+          </Animated.View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.planBtn,
+              styles.planBtnFeatured,
+              pressed && styles.planBtnPressed,
+            ]}
+            onPress={() =>
+              router.push({
+                pathname: '/abonnement-confirmation',
+                params: { plan: 'pro_plus', cycle: billingCycle },
+              })
+            }
           >
-            <Text style={[styles.planBtnTxt, styles.planBtnSecondaryTxt]}>
-              {loadingPlan === 'pro_plus' ? 'Activation...' : 'Passer au Pro+'}
-            </Text>
-          </TouchableOpacity>
+            <Text style={styles.planBtnTxt}>{proPlusOffer.ctaLabel}</Text>
+          </Pressable>
         </View>
 
-        <Text style={styles.footnote}>Les missions realisees incluses sont renouvelees chaque mois</Text>
-        <Text style={styles.commitmentText}>Sans engagement • Annulable a tout moment</Text>
+        <Text style={styles.commitmentText}>
+          {billingCycle === 'monthly'
+            ? 'Annulable à tout moment'
+            : 'Aucun engagement sur le renouvellement'}
+        </Text>
       </ScrollView>
     </View>
   )
@@ -138,38 +210,41 @@ export default function AbonnementScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   content: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 40 },
-  backBtn: { alignSelf: 'flex-start', marginBottom: 18 },
+  backBtn: { alignSelf: 'flex-start', marginBottom: 22 },
   backTxt: { color: C.terra, fontSize: 15, fontWeight: '700' },
-  eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: C.muted, marginBottom: 10 },
-  title: { fontSize: 30, lineHeight: 34, fontWeight: '800', color: C.title, letterSpacing: -0.8, marginBottom: 12 },
-  subtitle: { fontSize: 15, lineHeight: 22, color: C.text, marginBottom: 22 },
+  title: { fontSize: 32, lineHeight: 36, fontWeight: '800', color: C.title, letterSpacing: -0.9, marginBottom: 10 },
+  subtitle: { fontSize: 15, lineHeight: 21, color: C.text, marginBottom: 22 },
+  cycleToggle: { flexDirection: 'row', gap: 8, backgroundColor: '#F2ECE3', borderRadius: 16, padding: 4, marginBottom: 16 },
+  cycleChip: { flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F4EE', borderWidth: 1, borderColor: '#EAEAEA' },
+  cycleChipInner: { alignItems: 'center', justifyContent: 'center' },
+  cycleChipActive: { backgroundColor: C.card, borderWidth: 1, borderColor: C.border, shadowColor: '#181511', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 1 },
+  cycleChipPressed: { transform: [{ scale: 0.98 }] },
+  cycleChipTxt: { fontSize: 13, fontWeight: '700', color: C.muted },
+  cycleChipTxtActive: { color: C.title },
+  cycleHint: { fontSize: 13, color: C.text, fontWeight: '600', marginBottom: 16, textAlign: 'center' },
 
-  card: { backgroundColor: C.card, borderRadius: 20, borderWidth: 1, borderColor: C.border, padding: 18, marginBottom: 14 },
-  cardFeatured: { backgroundColor: C.terraSoft, borderColor: C.terraBorder, borderWidth: 1.5, shadowColor: C.terra, shadowOpacity: 0.14, shadowOffset: { width: 0, height: 12 }, shadowRadius: 24, elevation: 7 },
-  cardProPlus: { backgroundColor: '#FFFEFC', borderColor: '#E7DED2', shadowColor: '#181511', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 6 }, shadowRadius: 14, elevation: 2 },
+  card: { backgroundColor: C.card, borderRadius: 22, borderWidth: 1, borderColor: C.border, padding: 20, marginBottom: 16 },
+  cardFeatured: { backgroundColor: C.card, borderColor: C.border, borderWidth: 1, shadowColor: C.terra, shadowOpacity: 0.14, shadowOffset: { width: 0, height: 12 }, shadowRadius: 24, elevation: 7 },
+  cardProPlus: { backgroundColor: C.card, borderColor: C.border, borderWidth: 1, shadowColor: '#181511', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 8 }, shadowRadius: 18, elevation: 3 },
 
   badge: { alignSelf: 'flex-start', backgroundColor: '#FCE2D2', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 12 },
-  badgeTxt: { color: C.terra, fontSize: 12, fontWeight: '700' },
-  subtleBadge: { alignSelf: 'flex-start', backgroundColor: '#F6F1EA', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 12 },
-  subtleBadgeTxt: { color: '#7C7063', fontSize: 12, fontWeight: '700' },
+  badgeTxt: { color: C.terra, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  subtleBadge: { alignSelf: 'flex-start', backgroundColor: '#F8EFE6', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 12, borderWidth: 1, borderColor: '#E8D5C2' },
+  subtleBadgeTxt: { color: '#8F5E3D', fontSize: 12, fontWeight: '700' },
 
-  planName: { fontSize: 20, fontWeight: '800', color: C.title, marginBottom: 4 },
-  planPrice: { fontSize: 17, fontWeight: '800', color: C.terra, marginBottom: 10 },
-  planPriceProPlus: { color: '#7C7063' },
+  planName: { fontSize: 22, fontWeight: '800', color: C.title, marginBottom: 6 },
+  planPrice: { fontSize: 24, fontWeight: '800', color: C.terra, marginBottom: 10, letterSpacing: -0.5 },
+  planPriceProPlus: { color: C.title },
+  planHint: { fontSize: 13, lineHeight: 18, color: C.text, marginBottom: 6, fontWeight: '600' },
   planFeature: { fontSize: 14, lineHeight: 20, color: C.text, marginTop: 2 },
-
-  annualBlock: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
-  annualBlockFeatured: { borderTopColor: '#EED1BD' },
-  annualPrice: { fontSize: 15, fontWeight: '800', color: C.title, marginBottom: 4 },
-  annualHint: { fontSize: 13, lineHeight: 18, color: C.terra, fontWeight: '600' },
+  planFeatureCompact: { fontSize: 14, lineHeight: 20, color: C.text, marginTop: 2 },
 
   planBtn: { marginTop: 14, borderRadius: 16, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
+  planBtnLight: { backgroundColor: '#F6F1EA', borderWidth: 1, borderColor: C.border },
   planBtnFeatured: { backgroundColor: C.terra, shadowColor: C.terra, shadowOpacity: 0.18, shadowOffset: { width: 0, height: 10 }, shadowRadius: 18, elevation: 5 },
-  planBtnSecondary: { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: C.greenBorder, shadowColor: '#181511', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 6 }, shadowRadius: 12, elevation: 2 },
   planBtnTxt: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-  planBtnSecondaryTxt: { color: '#2A6E4A' },
-  planBtnDisabled: { opacity: 0.7 },
+  planBtnLightTxt: { color: C.text },
+  planBtnPressed: { transform: [{ scale: 0.985 }] },
 
-  footnote: { fontSize: 13, lineHeight: 19, color: C.muted, textAlign: 'center', marginTop: 4, marginBottom: 14 },
-  commitmentText: { fontSize: 13, lineHeight: 19, color: C.muted, textAlign: 'center', marginBottom: 8 },
+  commitmentText: { fontSize: 13, lineHeight: 19, color: C.muted, textAlign: 'center', marginTop: 4, marginBottom: 8 },
 })

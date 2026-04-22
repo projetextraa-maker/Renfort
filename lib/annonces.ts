@@ -5,10 +5,13 @@ import {
   normalizeAnnonceRecords,
 } from './annonce-read'
 import {
+  buildContractPayloadFromEngagement,
   createDraftContractForEngagement,
+  getContractForEngagement,
   signContractAsPatron,
   signContractAsWorker,
 } from './contracts'
+import { fetchAcceptedMissionNegotiationForServer } from './mission-rate-negotiations'
 import { supabase } from './supabase'
 import { cancelEngagement, canCheckInWithEngagement, createEngagementForMissionSelection, fetchActiveEngagementForMission, updateEngagementLifecycle } from './engagements'
 import {
@@ -54,9 +57,14 @@ function isMissingDpaeSchemaError(error: unknown): boolean {
   return message.includes("dpae_done") && message.includes('does not exist')
 }
 
-function isInvalidActiveEngagementStatusError(error: unknown): boolean {
+function isMissingDpaeAuditSchemaError(error: unknown): boolean {
   const message = String((error as { message?: string } | null)?.message ?? '').toLowerCase()
-  return message.includes('engagements_status_check') || (message.includes('status') && message.includes('active'))
+  return (
+    (message.includes('dpae_done_at') && message.includes('does not exist')) ||
+    (message.includes('dpae_done_by') && message.includes('does not exist')) ||
+    (message.includes('dpae_status') && message.includes('does not exist')) ||
+    (message.includes('dpae_payload_snapshot') && message.includes('does not exist'))
+  )
 }
 
 function isMissingEngagementsSchemaError(error: unknown): boolean {
@@ -67,6 +75,163 @@ function isMissingEngagementsSchemaError(error: unknown): boolean {
     message.includes('relation "engagements" does not exist') ||
     message.includes("schema cache")
   )
+}
+
+type DpaePayloadSnapshot = {
+  employer: {
+    patron_id: string
+    employer_label: string | null
+    etablissement_id: string | null
+    etablissement_nom: string | null
+    etablissement_adresse: string | null
+    etablissement_ville: string | null
+  }
+  worker: {
+    serveur_id: string
+    prenom: string | null
+    nom: string | null
+    email: string | null
+    telephone: string | null
+    ville: string | null
+  }
+  mission: {
+    mission_id: string
+    poste: string | null
+    date: string | null
+    heure_debut: string | null
+    heure_fin: string | null
+    mission_slot: string | null
+    lieu_travail: string | null
+    remuneration_brute_horaire: number | null
+  }
+  source: {
+    contract_template_version: string | null
+    prepared_at: string
+  }
+}
+
+type DpaeRecord = {
+  mission_id: string
+  status: string | null
+  confirmed_at: string | null
+  confirmed_by: string | null
+}
+
+function isMissingDpaeRecordsSchemaError(error: unknown): boolean {
+  const message = String((error as { message?: string } | null)?.message ?? '').toLowerCase()
+  return (
+    message.includes("could not find the table 'dpae_records'") ||
+    message.includes('relation "public.dpae_records" does not exist') ||
+    message.includes('relation "dpae_records" does not exist')
+  )
+}
+
+async function fetchDpaeRecordForMission(annonceId: string): Promise<DpaeRecord | null | undefined> {
+  const { data, error } = await supabase
+    .from('dpae_records')
+    .select('mission_id, status, confirmed_at, confirmed_by')
+    .eq('mission_id', annonceId)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingDpaeRecordsSchemaError(error)) return undefined
+    return null
+  }
+  if (!data) return null
+
+  return {
+    mission_id: String(data.mission_id),
+    status: data.status ?? null,
+    confirmed_at: data.confirmed_at ?? null,
+    confirmed_by: data.confirmed_by ?? null,
+  }
+}
+
+async function ensureDpaeRecordForMission(annonceId: string): Promise<DpaeRecord | null> {
+  const existing = await fetchDpaeRecordForMission(annonceId)
+  if (typeof existing === 'undefined') return null
+  if (existing) return existing
+
+  const { data, error } = await supabase
+    .from('dpae_records')
+    .insert({
+      mission_id: annonceId,
+      status: 'not_started',
+    })
+    .select('mission_id, status, confirmed_at, confirmed_by')
+    .maybeSingle()
+
+  if (!error && data) {
+    return {
+      mission_id: String(data.mission_id),
+      status: data.status ?? null,
+      confirmed_at: data.confirmed_at ?? null,
+      confirmed_by: data.confirmed_by ?? null,
+    }
+  }
+
+  if (isMissingDpaeRecordsSchemaError(error)) return null
+  const fallback = await fetchDpaeRecordForMission(annonceId)
+  return typeof fallback === 'undefined' ? null : fallback
+}
+
+async function resetMissionDpaeRecord(annonceId: string): Promise<void> {
+  const record = await ensureDpaeRecordForMission(annonceId)
+  if (!record) return
+
+  await supabase
+    .from('dpae_records')
+    .update({
+      status: 'not_started',
+      confirmed_at: null,
+      confirmed_by: null,
+    })
+    .eq('mission_id', annonceId)
+}
+
+async function buildMissionDpaePayload(annonceId: string): Promise<DpaePayloadSnapshot | null> {
+  const engagement = await fetchActiveEngagementForMission(annonceId)
+  if (!engagement) return null
+
+  const payload = await buildContractPayloadFromEngagement(engagement.id)
+  if (!payload) return null
+
+  const lieuTravail = [payload.etablissement.nom, payload.etablissement.adresse, payload.etablissement.ville]
+    .filter(Boolean)
+    .join(', ')
+
+  return {
+    employer: {
+      patron_id: payload.patron.id,
+      employer_label: payload.legal.employer_label ?? payload.patron.nom_restaurant ?? payload.etablissement.nom ?? null,
+      etablissement_id: payload.etablissement.id,
+      etablissement_nom: payload.etablissement.nom,
+      etablissement_adresse: payload.etablissement.adresse,
+      etablissement_ville: payload.etablissement.ville,
+    },
+    worker: {
+      serveur_id: payload.worker.id,
+      prenom: payload.worker.prenom,
+      nom: payload.worker.nom,
+      email: payload.worker.email,
+      telephone: payload.worker.telephone,
+      ville: payload.worker.ville,
+    },
+    mission: {
+      mission_id: payload.mission.id,
+      poste: payload.mission.poste,
+      date: payload.mission.date,
+      heure_debut: payload.mission.heure_debut,
+      heure_fin: payload.mission.heure_fin,
+      mission_slot: payload.mission.mission_slot,
+      lieu_travail: lieuTravail || payload.mission.ville || null,
+      remuneration_brute_horaire: payload.mission.salaire_brut_horaire,
+    },
+    source: {
+      contract_template_version: payload.template_version,
+      prepared_at: new Date().toISOString(),
+    },
+  }
 }
 
 type MissionWorkflowSnapshot = {
@@ -81,12 +246,17 @@ type MissionWorkflowSnapshot = {
   check_in_status?: string | null
   engagement_status?: string | null
   dpae_done?: boolean | null
+  dpae_status?: string | null
+  dpae_done_at?: string | null
+  dpae_done_by?: string | null
+  dpae_payload_snapshot?: Record<string, unknown> | null
   engagement_checked_in_at?: string | null
   engagement_checked_out_at?: string | null
 }
 
 export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<MissionWorkflowSnapshot | null> {
   const engagement = await fetchActiveEngagementForMission(annonceId)
+  const contract = engagement ? await getContractForEngagement(engagement.id) : null
   const { data, error } = await supabase
     .from('annonces')
     .select(ANNONCE_COMPAT_WITH_WORKFLOW_SELECT)
@@ -95,15 +265,51 @@ export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<M
 
   if (error || !data) return null
   const normalized = normalizeAnnonceRecord(data as any)
-  const { data: dpaeData, error: dpaeError } = await supabase
+  let dpaeRecord: DpaeRecord | null | undefined = null
+  try {
+    dpaeRecord = await fetchDpaeRecordForMission(annonceId)
+  } catch (error) {
+    if (!isMissingDpaeRecordsSchemaError(error)) {
+      console.warn('fetchMissionWorkflowSnapshot dpae_records warning', error)
+    }
+  }
+  let dpaeData: any = null
+  let dpaeError: any = null
+
+  const dpaeAuditQuery = await supabase
     .from('annonces')
-    .select('id, dpae_done')
+    .select('id, dpae_done, dpae_status, dpae_done_at, dpae_done_by, dpae_payload_snapshot')
     .eq('id', annonceId)
     .maybeSingle()
 
+  if (dpaeAuditQuery.error && isMissingDpaeAuditSchemaError(dpaeAuditQuery.error)) {
+    const fallback = await supabase
+      .from('annonces')
+      .select('id, dpae_done, dpae_done_at, dpae_done_by')
+      .eq('id', annonceId)
+      .maybeSingle()
+    dpaeData = fallback.data
+    dpaeError = fallback.error
+  } else {
+    dpaeData = dpaeAuditQuery.data
+    dpaeError = dpaeAuditQuery.error
+  }
+
+  const hasDpaeRecordsLayer = typeof dpaeRecord !== 'undefined'
   const dpaeDone =
-    !dpaeError && dpaeData && typeof (dpaeData as { dpae_done?: unknown }).dpae_done === 'boolean'
-      ? Boolean((dpaeData as { dpae_done?: boolean }).dpae_done)
+    hasDpaeRecordsLayer
+      ? dpaeRecord?.status === 'confirmed'
+      : !dpaeError && dpaeData && typeof dpaeData.dpae_done === 'boolean'
+        ? Boolean(dpaeData.dpae_done)
+        : null
+  const dpaeStatus = hasDpaeRecordsLayer
+    ? (dpaeRecord?.status ?? 'not_started')
+    : (!dpaeError && dpaeData ? (dpaeData.dpae_status ?? null) : null)
+  const dpaeDoneAt = hasDpaeRecordsLayer ? (dpaeRecord?.confirmed_at ?? null) : (!dpaeError && dpaeData ? (dpaeData.dpae_done_at ?? null) : null)
+  const dpaeDoneBy = hasDpaeRecordsLayer ? (dpaeRecord?.confirmed_by ?? null) : (!dpaeError && dpaeData ? (dpaeData.dpae_done_by ?? null) : null)
+  const dpaePayloadSnapshot =
+    !dpaeError && dpaeData && dpaeData.dpae_payload_snapshot && typeof dpaeData.dpae_payload_snapshot === 'object'
+      ? dpaeData.dpae_payload_snapshot
       : null
 
   return {
@@ -113,11 +319,15 @@ export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<M
     heure_debut: normalized.heure_debut,
     heure_fin: normalized.heure_fin,
     presence_confirmation_status: normalized.presence_confirmation_status,
-    contract_status: normalized.contract_status,
+    contract_status: contract?.status ?? null,
     payment_status: normalized.payment_status,
     check_in_status: normalized.check_in_status,
     engagement_status: engagement?.status ?? null,
     dpae_done: dpaeDone,
+    dpae_status: dpaeStatus,
+    dpae_done_at: dpaeDoneAt,
+    dpae_done_by: dpaeDoneBy,
+    dpae_payload_snapshot: dpaePayloadSnapshot,
     engagement_checked_in_at: engagement?.checked_in_at ?? null,
     engagement_checked_out_at: engagement?.checked_out_at ?? null,
   }
@@ -167,15 +377,22 @@ async function finalizeMissionSelectionWorkflow(input: {
   serveurId: string
   replacedEngagementId?: string | null
 }): Promise<AssignAnnonceResult> {
+  const acceptedNegotiation = await fetchAcceptedMissionNegotiationForServer(
+    input.serveurId,
+    input.annonceId
+  )
   const activeEngagement = await fetchActiveEngagementForMission(input.annonceId)
   if (activeEngagement && activeEngagement.serveur_id !== input.serveurId) {
     return { ok: false, reason: 'already_assigned' }
   }
 
+  const negotiatedRate = acceptedNegotiation?.counter_rate ?? null
+
   const engagement = activeEngagement ?? await createEngagementForMissionSelection({
     missionId: input.annonceId,
     patronId: input.patronId,
     serveurId: input.serveurId,
+    agreedHourlyRate: negotiatedRate,
     replacedEngagementId: input.replacedEngagementId ?? null,
   })
 
@@ -192,13 +409,25 @@ async function finalizeMissionSelectionWorkflow(input: {
     return { ok: false, reason: 'update_failed' }
   }
 
+  const engagementPatch: Record<string, unknown> = {
+    status: 'confirmed',
+    confirmed_at: new Date().toISOString(),
+  }
+  if (negotiatedRate != null) {
+    engagementPatch.agreed_hourly_rate = negotiatedRate
+  }
+
   await supabase
     .from('engagements')
-    .update({
-      status: 'confirmed',
-      confirmed_at: new Date().toISOString(),
-    })
+    .update(engagementPatch)
     .eq('id', engagement.id)
+
+  if (acceptedNegotiation && acceptedNegotiation.engagement_id !== engagement.id) {
+    await supabase
+      .from('mission_rate_negotiations')
+      .update({ engagement_id: engagement.id })
+      .eq('id', acceptedNegotiation.id)
+  }
 
   const draftContractResult = await createDraftContractForEngagement(engagement.id)
   if (!draftContractResult.ok && draftContractResult.reason !== 'schema_unavailable') {
@@ -209,6 +438,8 @@ async function finalizeMissionSelectionWorkflow(input: {
     .from('annonces')
     .update({ dpae_done: false })
     .eq('id', input.annonceId)
+
+  await resetMissionDpaeRecord(input.annonceId)
 
   const { data: relatedDemandes, error: demandesError } = await supabase
     .from('demandes')
@@ -259,7 +490,9 @@ export async function assignAnnonceToServeur(
     return { ok: false, reason: 'not_found' }
   }
 
-  if (!isOpenMissionStatus(annonce.statut)) {
+  const isDraftMission = String(annonce.statut ?? '').toLowerCase() === 'draft'
+
+  if (!isOpenMissionStatus(annonce.statut) && !isDraftMission) {
     if (annonce.serveur_id === serveurId && isActiveMissionStatus(annonce.statut)) {
       return finalizeMissionSelectionWorkflow({
         annonceId,
@@ -311,7 +544,7 @@ export async function assignAnnonceToServeur(
       cancelled_at: null,
     })
     .eq('id', annonceId)
-    .in('statut', [...OPEN_MISSION_READ_STATUSES])
+    .in('statut', [...OPEN_MISSION_READ_STATUSES, 'draft'])
     .select('id')
     .maybeSingle()
 
@@ -685,7 +918,7 @@ export async function markMissionCheckIn(annonceId: string): Promise<MissionWork
   if (error) return { ok: false, reason: 'update_failed' }
   const engagement = await fetchActiveEngagementForMission(annonceId)
   if (engagement) {
-    await updateEngagementLifecycle(engagement.id, 'confirmed', {
+    await updateEngagementLifecycle(engagement.id, 'active', {
       checked_in_at: nowIso,
     })
   }
@@ -695,30 +928,83 @@ export async function markMissionCheckIn(annonceId: string): Promise<MissionWork
 export async function markMissionDpaeDone(annonceId: string): Promise<MissionWorkflowResult> {
   const snapshot = await fetchMissionWorkflowSnapshot(annonceId)
   if (!snapshot) return { ok: false, reason: 'not_found' }
+  const engagement = await fetchActiveEngagementForMission(annonceId)
+  if (!engagement) {
+    return { ok: false, reason: 'invalid_status', message: 'La mission doit etre confirmee avant de finaliser la DPAE.' }
+  }
 
   if (!canCheckInWithEngagement(snapshot.engagement_status)) {
     return { ok: false, reason: 'invalid_status', message: 'La mission doit etre confirmee avant de finaliser la DPAE.' }
   }
 
   try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user || user.id !== engagement.patron_id) {
+      return { ok: false, reason: 'blocked', message: 'Seul l employeur peut confirmer la DPAE.' }
+    }
+    const dpaeTimestamp = new Date().toISOString()
+    const dpaePayload = (await buildMissionDpaePayload(annonceId)) ?? snapshot.dpae_payload_snapshot ?? null
+    const dpaeRecord = await ensureDpaeRecordForMission(annonceId)
+
+    if (dpaeRecord) {
+      const { error: dpaeRecordError } = await supabase
+        .from('dpae_records')
+        .update({
+          status: 'confirmed',
+          confirmed_at: dpaeTimestamp,
+          confirmed_by: user?.id ?? null,
+        })
+        .eq('mission_id', annonceId)
+
+      if (dpaeRecordError && !isMissingDpaeRecordsSchemaError(dpaeRecordError)) {
+        return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
+      }
+    }
+
     const { error } = await supabase
       .from('annonces')
-      .update({ dpae_done: true })
+      .update({
+        dpae_done: true,
+        dpae_status: 'confirmed',
+        dpae_done_at: dpaeTimestamp,
+        dpae_done_by: user?.id ?? null,
+        dpae_payload_snapshot: dpaePayload,
+      })
       .eq('id', annonceId)
 
     if (error) {
+      if (isMissingDpaeAuditSchemaError(error)) {
+        const { error: fallbackError } = await supabase
+          .from('annonces')
+          .update({ dpae_done: true })
+          .eq('id', annonceId)
+
+        if (fallbackError) {
+          if (isMissingDpaeSchemaError(fallbackError)) {
+            return { ok: false, reason: 'blocked', message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.' }
+          }
+          return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
+        }
+
+        return { ok: true, changed: true }
+      }
       if (isMissingDpaeSchemaError(error)) {
         return { ok: false, reason: 'blocked', message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.' }
       }
-      return { ok: false, reason: 'update_failed', message: "Impossible d'enregistrer la DPAE pour le moment." }
+      return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
     }
 
     return { ok: true, changed: true }
   } catch (error) {
+    if (isMissingDpaeAuditSchemaError(error)) {
+      return { ok: false, reason: 'blocked', message: 'Les champs de tracabilite DPAE doivent etre ajoutes en base avant de confirmer cette etape.' }
+    }
     if (isMissingDpaeSchemaError(error)) {
       return { ok: false, reason: 'blocked', message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.' }
     }
-    return { ok: false, reason: 'update_failed', message: "Impossible d'enregistrer la DPAE pour le moment." }
+    return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
   }
 }
 
@@ -740,38 +1026,28 @@ export async function finalizeMissionActivation(annonceId: string): Promise<Miss
     return { ok: false, reason: contractDraft.reason === 'schema_unavailable' ? 'blocked' : contractDraft.reason, message: contractDraft.message }
   }
 
-  const patronSignature = await signContractAsPatron(engagement.id)
-  if (!patronSignature.ok) {
-    return { ok: false, reason: patronSignature.reason === 'schema_unavailable' ? 'blocked' : patronSignature.reason, message: patronSignature.message }
-  }
-
-  const workerSignature = await signContractAsWorker(engagement.id)
-  if (!workerSignature.ok) {
-    return { ok: false, reason: workerSignature.reason === 'schema_unavailable' ? 'blocked' : workerSignature.reason, message: workerSignature.message }
-  }
-
-  const dpaeResult = await markMissionDpaeDone(annonceId)
-  if (!dpaeResult.ok) {
-    return dpaeResult
-  }
-
+  const dpaePayload = await buildMissionDpaePayload(annonceId)
   const { error: activationError } = await supabase
     .from('engagements')
     .update({
-      status: 'active',
-      contract_status: 'fully_signed',
+      contract_status: 'generated',
     })
     .eq('id', engagement.id)
 
   if (activationError) {
-    if (isInvalidActiveEngagementStatusError(activationError)) {
-      return {
-        ok: false,
-        reason: 'blocked',
-        message: "Le statut d'engagement 'active' doit etre ajoute en base avant de finaliser la mission.",
-      }
-    }
     return { ok: false, reason: 'update_failed', message: 'Impossible de finaliser la mission pour le moment.' }
+  }
+
+  const { error: dpaePrepareError } = await supabase
+    .from('annonces')
+    .update({
+      dpae_status: 'prepared',
+      dpae_payload_snapshot: dpaePayload,
+    })
+    .eq('id', annonceId)
+
+  if (dpaePrepareError && !isMissingDpaeAuditSchemaError(dpaePrepareError)) {
+    return { ok: false, reason: 'update_failed', message: 'Impossible de preparer la DPAE pour le moment.' }
   }
 
   return { ok: true, changed: true }
@@ -895,5 +1171,6 @@ export async function openUrgentMissionReplacement(
     .from('annonces')
     .update({ dpae_done: false })
     .eq('id', annonceId)
+  await resetMissionDpaeRecord(annonceId)
   return { ok: true, replacedEngagementId: engagement.id }
 }

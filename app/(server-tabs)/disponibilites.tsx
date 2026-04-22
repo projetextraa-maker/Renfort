@@ -13,6 +13,7 @@ import {
   fetchServeurDisponibilitesHebdo,
   replaceServeurDisponibilitesHebdo,
 } from '../../lib/serveur-disponibilites-api'
+import { getFriendlyWriteError } from '../../lib/supabase-errors'
 import { supabase } from '../../lib/supabase'
 
 const SLOTS_VISIBLES = CANONICAL_WEEKLY_AVAILABILITY_SLOTS
@@ -174,7 +175,8 @@ export default function DisponibilitesServeurScreen() {
     try {
       const result = await replaceServeurDisponibilitesHebdo(serveurId, availabilities)
       if (!result.ok) {
-        Alert.alert('Erreur', result.error ?? 'Impossible de sauvegarder.')
+        console.error('disponibilites save error', result.error)
+        Alert.alert('Erreur', getFriendlyWriteError(result.error, 'Impossible de sauvegarder les disponibilites pour le moment.'))
         return
       }
       Alert.alert('Succes', 'Disponibilites mises a jour !')

@@ -28,14 +28,6 @@ import { syncReferralRewardsForReferredUser } from '../lib/referrals'
 import { getServerBusySlotMessage } from '../lib/server-availability'
 import { detectMissionSlot } from '../lib/serveur-disponibilites'
 import { syncServeurMissionStats } from '../lib/serveur-stats'
-import {
-  getEstimatedOverageAmount,
-  getOverageCount,
-  getRemainingMissions,
-  isActiveSubscription,
-  syncPatronSubscriptionCycle,
-  type PatronSubscriptionState,
-} from '../lib/subscription'
 import { supabase } from '../lib/supabase'
 
 type Annonce = Pick<
@@ -88,10 +80,6 @@ const C = {
   redBg:     '#FEF2F2',
   redBd:     '#F2CACA',
   shadow:    '#2B2118',
-}
-
-function initialesAvatar(prenom: string, nomResto: string): string {
-  return `${prenom?.[0] ?? ''}${nomResto?.[0] ?? ''}`.toUpperCase()
 }
 
 function statutConfig(statut: string) {
@@ -158,7 +146,6 @@ export default function DashboardPatron() {
   const [nbDispo,            setNbDispo]            = useState(0)
   const [candidaturesRecues, setCandidaturesRecues] = useState<Candidature[]>([])
   const [refreshing,         setRefreshing]         = useState(false)
-  const [subscriptionState,  setSubscriptionState]  = useState<PatronSubscriptionState | null>(null)
   const [ratingModal,        setRatingModal]        = useState<RatingModalState>(null)
   const [ratingNote,         setRatingNote]         = useState(0)
   const [ratingComment,      setRatingComment]      = useState('')
@@ -175,9 +162,6 @@ export default function DashboardPatron() {
 
       const { data: patron } = await supabase
         .from('patrons').select('prenom, nom_restaurant').eq('id', user.id).single()
-
-      const { data: syncedSubscription } = await syncPatronSubscriptionCycle(user.id)
-      setSubscriptionState(syncedSubscription)
 
       if (patron) {
         setPrenom(patron.prenom ?? '')
@@ -405,17 +389,6 @@ export default function DashboardPatron() {
             if (annonceData?.statut === 'terminee' || annonceData?.statut === 'completed') { Alert.alert('Information', 'Cette mission est deja comptabilisee.'); return }
             const result = await updateAnnonceLifecycleStatus(annonceId, 'completed')
             if (!result.ok) { Alert.alert('Erreur', 'Impossible de terminer la mission'); return }
-            const { data: patronData, error: patronError } = await syncPatronSubscriptionCycle(user.id)
-            if (!patronError && patronData && isActiveSubscription(patronData.abonnement)) {
-              const used     = patronData.missions_utilisees_ce_mois ?? 0
-              const incluses = patronData.missions_incluses ?? 0
-              const hors     = patronData.missions_hors_forfait_ce_mois ?? 0
-              const next     = used + 1
-              await supabase.from('patrons').update({
-                missions_utilisees_ce_mois:    next,
-                missions_hors_forfait_ce_mois: next > incluses ? hors + 1 : hors,
-              }).eq('id', user.id)
-            }
             const annonceCourante = annonces.find(a => a.id === annonceId)
             const serveurId  = annonceCourante?.serveur_id ?? null
             const serveurNom = serveurId ? (serveurs[serveurId] ?? 'le prestataire') : 'le prestataire'
@@ -500,11 +473,6 @@ export default function DashboardPatron() {
   const annoncesTerminees  = annonces.filter(a => isCompletedMissionStatus(a.statut))
   const nbTerminees       = annoncesTerminees.length
   const nbCandidatures    = candidaturesRecues.length
-  const initiales         = initialesAvatar(prenom, nomResto)
-  const remainingMissions     = getRemainingMissions(subscriptionState)
-  const hasActiveSubscription = isActiveSubscription(subscriptionState?.abonnement)
-  const overageCount          = getOverageCount(subscriptionState)
-  const overageAmount         = getEstimatedOverageAmount(subscriptionState)
 
   const filteredMissions = activeMissionFilter === 'ouverte' ? annoncesOuvertes
     : activeMissionFilter === 'attribuee' ? annoncesAttribuees : annoncesTerminees
@@ -526,15 +494,10 @@ export default function DashboardPatron() {
         {/* HEADER */}
         <View style={s.header}>
           <View>
-            <Text style={s.eyebrow}>TABLEAU DE BORD</Text>
-            <Text style={s.nom}>
-              Bonjour {prenom || 'vous'},{'\n'}
-              <Text style={s.nomAccent}>{nomResto || 'votre etablissement'}.</Text>
-            </Text>
+            <Text style={s.nom}>{`Bonjour ${prenom || 'vous'}`}</Text>
+            <Text style={s.headerVenue}>{nomResto || 'votre etablissement'}</Text>
+            <Text style={s.headerSub}>{"G\u00e9rez vos missions et vos candidats en un coup d\u2019\u0153il"}</Text>
           </View>
-          <TouchableOpacity style={s.avatar} onPress={() => router.push('/profil-patron')} activeOpacity={0.7}>
-            <Text style={s.avatarTxt}>{initiales}</Text>
-          </TouchableOpacity>
         </View>
 
         {/* HERO */}
@@ -545,12 +508,6 @@ export default function DashboardPatron() {
               <Text style={s.heroSub}>
                 {nbDispo > 0 ? `${nbDispo} profils disponibles autour de vous` : 'Publiez une mission pour relancer la recherche'}
               </Text>
-              {hasActiveSubscription && (
-                <>
-                  <Text style={s.heroQuota}>{remainingMissions} missions restantes ce mois-ci</Text>
-                  <Text style={s.heroQuotaSub}>{`${overageCount} hors forfait - ${overageAmount}${EURO} estimes`}</Text>
-                </>
-              )}
             </View>
           </View>
           <TouchableOpacity style={s.heroCta} onPress={() => router.push('/poster-annonce')} activeOpacity={0.88}>
@@ -907,19 +864,17 @@ const s = StyleSheet.create({
   scroll:  { flex: 1 },
   content: { paddingBottom: 124 },
 
-  header:    { paddingTop: 56, paddingHorizontal: 24, paddingBottom: 22, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  header:    { paddingTop: 56, paddingHorizontal: 24, paddingBottom: 22, alignItems: 'flex-start' },
   eyebrow:   { fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase', color: C.muted, marginBottom: 6, fontWeight: '500' },
   nom:       { fontSize: 30, fontWeight: '700', color: C.title, letterSpacing: -0.4, lineHeight: 34 },
+  headerVenue: { marginTop: 6, fontSize: 16, fontWeight: '700', color: C.terraDark },
+  headerSub: { marginTop: 4, fontSize: 13, lineHeight: 19, color: C.soft, fontWeight: '500' },
   nomAccent: { color: C.terra },
-  avatar:    { width: 48, height: 48, borderRadius: 16, backgroundColor: C.card, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  avatarTxt: { fontSize: 13, fontWeight: '700', color: C.text },
 
   hero:         { marginHorizontal: 20, backgroundColor: C.card, borderRadius: 24, paddingHorizontal: 20, paddingVertical: 16, borderWidth: 1, borderColor: C.border, shadowColor: C.shadow, shadowOpacity: 0.05, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 2 },
   heroTop:      { marginBottom: 10 },
   heroTitle:    { fontSize: 21, lineHeight: 26, fontWeight: '800', color: C.title, letterSpacing: -0.6 },
   heroSub:      { marginTop: 5, fontSize: 13, lineHeight: 19, color: C.soft, fontWeight: '500' },
-  heroQuota:    { marginTop: 9, fontSize: 12, lineHeight: 17, color: C.terraDark, fontWeight: '700' },
-  heroQuotaSub: { marginTop: 4, fontSize: 12, lineHeight: 17, color: C.soft, fontWeight: '600' },
   heroCta:      { backgroundColor: C.terra, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.terraDark },
   heroCtaTxt:   { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.2 },
 

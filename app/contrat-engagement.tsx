@@ -157,7 +157,7 @@ export default function ContratEngagementScreen() {
 
       setContract(result.contract)
       setMissionValidation(await fetchMissionWorkflowSnapshot(engagement.mission_id))
-      Alert.alert('Signature enregistree', actorRole === 'patron' ? 'Votre signature a bien ete enregistree.' : 'Votre signature a bien ete enregistree.')
+      Alert.alert('Signature enregistrée', actorRole === 'patron' ? 'Votre signature a bien été enregistrée.' : 'Votre signature a bien été enregistrée.')
     } finally {
       setSigning(false)
     }
@@ -168,12 +168,12 @@ export default function ContratEngagementScreen() {
 
     const result = await markMissionDpaeDone(engagement.mission_id)
     if (!result.ok) {
-      Alert.alert('Action bloquee', result.message ?? "Impossible d'enregistrer la DPAE.")
+      Alert.alert('Action bloquée', result.message ?? "Impossible d'enregistrer la DPAE.")
       return
     }
 
     setMissionValidation(await fetchMissionWorkflowSnapshot(engagement.mission_id))
-    Alert.alert('DPAE enregistree', 'La declaration URSSAF est maintenant marquee comme finalisee pour cette mission.')
+    Alert.alert('DPAE enregistrée', 'La déclaration URSSAF est maintenant marquée comme finalisée pour cette mission.')
   }, [actorRole, engagement])
 
   if (loading) {
@@ -210,9 +210,9 @@ export default function ContratEngagementScreen() {
 
         <View style={s.card}>
           <Text style={s.eyebrow}>CONTRAT</Text>
-          <Text style={s.title}>Contrat pre-rempli</Text>
+          <Text style={s.title}>Contrat pré-rempli</Text>
           <Text style={s.sub}>
-            Le contrat reste entre l etablissement employeur et le serveur selectionne. La plateforme prepare seulement le support.
+            {"Le contrat reste entre l'établissement employeur et le serveur sélectionné. La plateforme prépare seulement le support."}
           </Text>
         </View>
 
@@ -220,7 +220,7 @@ export default function ContratEngagementScreen() {
           <View style={[s.card, s.warnCard]}>
             <Text style={s.warnTitle}>Configuration requise</Text>
             <Text style={s.warnText}>{schemaMessage}</Text>
-            <Text style={s.warnText}>Execute d abord `supabase/contracts_workflow.sql` pour activer cette couche.</Text>
+            <Text style={s.warnText}>{"Le contrat n'est pas encore disponible pour cette mission. Réessayez dans un instant."}</Text>
           </View>
         ) : null}
 
@@ -228,7 +228,7 @@ export default function ContratEngagementScreen() {
           <View style={s.card}>
             <Text style={s.sectionTitle}>Engagement rattache</Text>
             <Text style={s.rowLabel}>Statut mission</Text>
-            <Text style={s.rowValue}>{missionSummary?.missionStatusLabel ?? 'Mission confirmee'}</Text>
+            <Text style={s.rowValue}>{missionSummary?.missionStatusLabel ?? 'Mission confirmée'}</Text>
             <Text style={s.rowLabel}>Contrat</Text>
             <Text style={s.rowValue}>{missionSummary?.contractDisplayLabel ?? 'En cours'}</Text>
             {missionSummary?.missionStatusValue !== 'pending' ? (
@@ -241,18 +241,18 @@ export default function ContratEngagementScreen() {
         ) : (
           <View style={[s.card, s.warnCard]}>
             <Text style={s.warnTitle}>Aucun engagement</Text>
-            <Text style={s.warnText}>Le contrat ne peut pas etre genere sans engagement actif sur cette mission.</Text>
+            <Text style={s.warnText}>Le contrat ne peut pas être généré sans engagement actif sur cette mission.</Text>
           </View>
         )}
 
         {missionSummary ? (
           <View style={s.card}>
-            <Text style={s.sectionTitle}>Etat mission</Text>
+            <Text style={s.sectionTitle}>État mission</Text>
             <Text style={s.rowLabel}>Statut mission</Text>
             <Text style={s.rowValue}>{missionSummary.missionStatusLabel}</Text>
             <Text style={s.rowLabel}>Accord mission</Text>
             <Text style={s.rowValue}>
-              {missionSummary.isAgreementConfirmed ? 'Engagement confirme' : 'En attente de validation'}
+              {missionSummary.isAgreementConfirmed ? 'Engagement confirmé' : 'En attente de validation'}
             </Text>
             {missionAgreementBlockers.length > 0 ? (
               <View style={s.inlineWarnBox}>
@@ -263,14 +263,14 @@ export default function ContratEngagementScreen() {
             ) : (
               <View style={s.inlineGoodBox}>
                 <Text style={s.inlineGoodText}>
-                  L&apos;accord mission entre le patron et le serveur est bien confirme.
+                  L&apos;accord mission entre le patron et le serveur est bien confirmé.
                 </Text>
               </View>
             )}
 
             <Text style={s.rowLabel}>Administratif</Text>
             <Text style={s.rowValue}>
-              {missionSummary.isReadyForCheckIn ? 'Pret pour le demarrage' : 'A finaliser si necessaire'}
+              {missionSummary.isReadyForCheckIn ? 'Prêt pour le démarrage' : 'À finaliser si nécessaire'}
             </Text>
             {missionAdministrativeBlockers.length > 0 ? (
               <View style={s.inlineWarnBox}>
@@ -280,9 +280,9 @@ export default function ContratEngagementScreen() {
               </View>
             ) : null}
 
-            <Text style={s.rowLabel}>Reconfirmation presence</Text>
+            <Text style={s.rowLabel}>Reconfirmation présence</Text>
             <Text style={s.rowValue}>
-              {missionSummary.isPresenceConfirmed ? 'Disponibilite reconfirmee' : 'A securiser avant la prise de poste'}
+              {missionSummary.isPresenceConfirmed ? 'Disponibilité reconfirmée' : 'À sécuriser avant la prise de poste'}
             </Text>
             {presenceMessage ? <Text style={s.presenceText}>{presenceMessage}</Text> : null}
           </View>
@@ -290,7 +290,7 @@ export default function ContratEngagementScreen() {
 
         {warnings.length > 0 ? (
           <View style={[s.card, s.warnCard]}>
-            <Text style={s.warnTitle}>Points a verifier</Text>
+            <Text style={s.warnTitle}>Points à vérifier</Text>
             {warnings.map((warning, index) => (
               <Text key={`${warning}-${index}`} style={s.warnText}>{warning}</Text>
             ))}
@@ -313,7 +313,7 @@ export default function ContratEngagementScreen() {
 
             <View style={s.card}>
               <Text style={s.sectionTitle}>Employeur</Text>
-              <Text style={s.rowLabel}>Etablissement</Text>
+              <Text style={s.rowLabel}>Établissement</Text>
               <Text style={s.rowValue}>{payload.etablissement.nom ?? payload.patron.nom_restaurant ?? '-'}</Text>
               <Text style={s.rowLabel}>Adresse</Text>
               <Text style={s.rowValue}>{payload.etablissement.adresse ?? payload.etablissement.ville ?? '-'}</Text>
@@ -323,7 +323,7 @@ export default function ContratEngagementScreen() {
 
             <View style={s.card}>
               <Text style={s.sectionTitle}>Serveur</Text>
-              <Text style={s.rowLabel}>Identite</Text>
+              <Text style={s.rowLabel}>Identité</Text>
               <Text style={s.rowValue}>{`${payload.worker.prenom ?? ''} ${payload.worker.nom ?? ''}`.trim() || '-'}</Text>
               <Text style={s.rowLabel}>Contact</Text>
               <Text style={s.rowValue}>{payload.worker.email ?? payload.worker.telephone ?? '-'}</Text>
@@ -341,15 +341,15 @@ export default function ContratEngagementScreen() {
           <View style={s.card}>
             <Text style={s.sectionTitle}>Signatures</Text>
             <Text style={s.rowLabel}>Patron</Text>
-            <Text style={s.rowValue}>{contract.patron_signed_at ? `Signe le ${new Date(contract.patron_signed_at).toLocaleString('fr-FR')}` : 'En attente'}</Text>
+            <Text style={s.rowValue}>{contract.patron_signed_at ? `Signé le ${new Date(contract.patron_signed_at).toLocaleString('fr-FR')}` : 'En attente'}</Text>
             <Text style={s.rowLabel}>Serveur</Text>
-            <Text style={s.rowValue}>{contract.worker_signed_at ? `Signe le ${new Date(contract.worker_signed_at).toLocaleString('fr-FR')}` : 'En attente'}</Text>
+            <Text style={s.rowValue}>{contract.worker_signed_at ? `Signé le ${new Date(contract.worker_signed_at).toLocaleString('fr-FR')}` : 'En attente'}</Text>
           </View>
         ) : null}
 
         {canMarkDpae ? (
           <TouchableOpacity style={s.secondaryBtn} onPress={handleMarkDpaeDone} activeOpacity={0.88}>
-            <Text style={s.secondaryBtnTxt}>Marquer DPAE faite</Text>
+            <Text style={s.secondaryBtnTxt}>Marquer la DPAE comme faite</Text>
           </TouchableOpacity>
         ) : null}
 

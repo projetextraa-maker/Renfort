@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { getHomeRouteForRole, resolveAccountRole } from '../lib/auth-role'
 import { supabase } from '../lib/supabase'
 
 const C = {
@@ -36,9 +37,24 @@ export default function ConnexionPatron() {
 
     if (error || !data.user) {
       Alert.alert('Erreur', 'Email ou mot de passe incorrect')
-    } else {
-      router.push('/dashboard_patron')
+      return
     }
+
+    const accountRole = await resolveAccountRole(data.user.id, data.user.user_metadata?.account_role)
+    if (accountRole === 'patron') {
+      router.replace(getHomeRouteForRole(accountRole))
+      return
+    }
+
+    if (accountRole === 'serveur') {
+      Alert.alert('Information', 'Ce compte est un compte serveur. Redirection vers votre espace serveur.', [
+        { text: 'OK', onPress: () => router.replace(getHomeRouteForRole(accountRole)) },
+      ])
+      return
+    }
+
+    await supabase.auth.signOut()
+    Alert.alert('Erreur', "Impossible d'identifier le type de compte.")
   }
 
   return (

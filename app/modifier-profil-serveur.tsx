@@ -1,7 +1,7 @@
 import Slider from '@react-native-community/slider'
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { fetchCitiesByPostalCode, type FrenchCityOption } from '../lib/french-postal'
 import {
   EXPERIENCE_DESCRIPTIONS_SUGGESTIONS,
@@ -18,7 +18,6 @@ export default function ModifierProfilServeur() {
   const [prenom,     setPrenom]     = useState('')
   const [nom,        setNom]        = useState('')
   const [telephone,  setTelephone]  = useState('')
-  const [photoUrl,   setPhotoUrl]   = useState('')
   const [description, setDescription] = useState('')
   const [postalCode, setPostalCode] = useState('')
   const [ville,      setVille]      = useState('')
@@ -67,7 +66,6 @@ export default function ModifierProfilServeur() {
       setPrenom(data.prenom || '')
       setNom(data.nom || '')
       setTelephone(data.telephone || '')
-      setPhotoUrl(data.photo_url || '')
       setDescription(data.description || '')
       setPostalCode(data.code_postal || '')
       setVille(data.ville || '')
@@ -147,7 +145,6 @@ export default function ModifierProfilServeur() {
     // Save profile info only — never touch disponible or calendar slots
     const { error } = await supabase.from('serveurs').update({
       prenom, nom, telephone,
-      photo_url: photoUrl.trim() || null,
       description: description.trim() || null,
       code_postal: postalCode,
       ville,
@@ -161,10 +158,10 @@ export default function ModifierProfilServeur() {
     const experiencesResult = await replaceServeurExperiences(serveurId, experiences)
     setLoading(false)
     if (!experiencesResult.ok) {
-      Alert.alert('Erreur', experiencesResult.error ?? "Impossible d'enregistrer les experiences.")
+      Alert.alert('Erreur', experiencesResult.error ?? "Impossible d'enregistrer les expériences.")
       return
     }
-    Alert.alert('Succes', 'Profil mis a jour !', [{ text: 'OK', onPress: () => router.back() }])
+    Alert.alert('Succès', 'Profil mis à jour !', [{ text: 'OK', onPress: () => router.back() }])
   }
 
   return (
@@ -174,49 +171,30 @@ export default function ModifierProfilServeur() {
       </TouchableOpacity>
 
       <Text style={styles.title}>Modifier mon profil</Text>
-      <Text style={styles.subtitle}>Mettez a jour vos informations</Text>
+      <Text style={styles.subtitle}>Mettez à jour vos informations</Text>
 
-      <Text style={styles.label}>Prenom *</Text>
-      <TextInput style={styles.input} value={prenom} onChangeText={setPrenom} placeholder="Votre prenom" placeholderTextColor="#999" />
+      <Text style={styles.label}>Prénom *</Text>
+      <TextInput style={styles.input} value={prenom} onChangeText={setPrenom} placeholder="Votre prénom" placeholderTextColor="#999" />
 
       <Text style={styles.label}>Nom *</Text>
       <TextInput style={styles.input} value={nom} onChangeText={setNom} placeholder="Votre nom" placeholderTextColor="#999" />
 
-      <Text style={styles.label}>Telephone *</Text>
+      <Text style={styles.label}>Téléphone *</Text>
       <TextInput style={styles.input} value={telephone} onChangeText={setTelephone} placeholder="06 00 00 00 00" placeholderTextColor="#999" keyboardType="phone-pad" />
 
-      <Text style={styles.label}>Photo de profil</Text>
-      {photoUrl.trim() ? (
-        <View style={styles.photoPreviewWrap}>
-          <Image source={{ uri: photoUrl.trim() }} style={styles.photoPreview} />
-        </View>
-      ) : (
-        <View style={styles.photoPlaceholder}>
-          <Text style={styles.photoPlaceholderText}>Ajoutez l&apos;URL d&apos;une photo pour rassurer les patrons</Text>
-        </View>
-      )}
-      <TextInput
-        style={styles.input}
-        value={photoUrl}
-        onChangeText={setPhotoUrl}
-        placeholder="https://..."
-        placeholderTextColor="#999"
-        autoCapitalize="none"
-      />
-
-      <Text style={styles.label}>Description / mini presentation</Text>
+      <Text style={styles.label}>Description / mini présentation</Text>
       <TextInput
         style={[styles.input, styles.descriptionInput]}
         value={description}
         onChangeText={setDescription}
-        placeholder="Ex : Extra souriante et ponctuelle, a l'aise en brasserie et en gros service."
+        placeholder="Ex : Extra souriante et ponctuelle, à l'aise en brasserie et en gros service."
         placeholderTextColor="#999"
         multiline
         maxLength={320}
         textAlignVertical="top"
       />
       <Text style={styles.descriptionHint}>
-        Cette presentation sera visible par les patrons dans votre profil public.
+        Cette présentation sera visible par les patrons dans votre profil public.
       </Text>
 
       <Text style={styles.label}>Code postal *</Text>
@@ -233,7 +211,7 @@ export default function ModifierProfilServeur() {
       <Text style={styles.label}>Ville *</Text>
       <View style={[styles.input, styles.cityField, postalCode.length !== 5 && styles.cityFieldDisabled]}>
         <Text style={ville ? styles.cityFieldText : styles.cityFieldPlaceholder}>
-          {ville || (postalCode.length === 5 ? 'Selectionnez votre ville' : 'Entrez un code postal valide')}
+          {ville || (postalCode.length === 5 ? 'Sélectionnez votre ville' : 'Entrez un code postal valide')}
         </Text>
       </View>
 
@@ -242,7 +220,7 @@ export default function ModifierProfilServeur() {
           {citiesLoading ? (
             <Text style={styles.cityHelper}>Recherche des villes...</Text>
           ) : cityOptions.length === 0 ? (
-            <Text style={styles.cityHelper}>Aucune ville trouvee pour ce code postal</Text>
+            <Text style={styles.cityHelper}>Aucune ville trouvée pour ce code postal</Text>
           ) : (
             cityOptions.map((city) => {
               const isSelected = selectedCity?.nom === city.nom && selectedCity?.codePostal === city.codePostal
@@ -264,12 +242,12 @@ export default function ModifierProfilServeur() {
 
       {/* EXPERIENCES */}
       <View style={styles.section}>
-        <Text style={styles.label}>Experiences</Text>
-        <Text style={styles.sectionHelper}>Ajoutez des experiences courtes et concretes pour rassurer les patrons.</Text>
+        <Text style={styles.label}>Expériences</Text>
+        <Text style={styles.sectionHelper}>Ajoutez des expériences courtes et concrètes pour rassurer les patrons.</Text>
 
         {experiences.length === 0 ? (
           <View style={styles.experienceEmpty}>
-            <Text style={styles.experienceEmptyText}>Aucune experience structuree ajoutee pour le moment.</Text>
+            <Text style={styles.experienceEmptyText}>Aucune expérience structurée ajoutée pour le moment.</Text>
           </View>
         ) : (
           <View style={styles.experienceCardsList}>
@@ -297,7 +275,7 @@ export default function ModifierProfilServeur() {
             <View style={styles.experienceEditorCard}>
               <View style={styles.experienceEditorHeader}>
                 <Text style={styles.experienceCardTitle}>
-                  {editingExperienceIndex == null ? 'Nouvelle experience' : "Modifier l'experience"}
+                  {editingExperienceIndex == null ? 'Nouvelle expérience' : "Modifier l'expérience"}
                 </Text>
                 <TouchableOpacity onPress={resetDraftExperience}>
                   <Text style={styles.resetButtonText}>Annuler</Text>
@@ -355,13 +333,13 @@ export default function ModifierProfilServeur() {
 
             <TouchableOpacity style={styles.addExperienceButton} onPress={saveDraftExperience}>
               <Text style={styles.addExperienceButtonText}>
-                {editingExperienceIndex == null ? 'Ajouter une experience' : 'Enregistrer cette experience'}
+                {editingExperienceIndex == null ? 'Ajouter une expérience' : 'Enregistrer cette expérience'}
               </Text>
             </TouchableOpacity>
           </>
         ) : (
           <TouchableOpacity style={styles.secondaryAddButton} onPress={startAddExperience}>
-            <Text style={styles.secondaryAddButtonText}>Ajouter une experience</Text>
+            <Text style={styles.secondaryAddButtonText}>Ajouter une expérience</Text>
           </TouchableOpacity>
         )}
       </View>

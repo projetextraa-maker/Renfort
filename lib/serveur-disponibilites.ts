@@ -172,7 +172,7 @@ export function isServerAvailableForMission(
   missionDate: string,
   missionSlot: MissionSlot
 ): boolean {
-  if (!disponibilites || disponibilites.length === 0) return false
+  if (!disponibilites || disponibilites.length === 0) return true
   const day = getWeekdayFromDateString(missionDate)
   if (!day) return false
   return isServerMatchingMission(disponibilites, day, missionSlot)

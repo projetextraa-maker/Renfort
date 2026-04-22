@@ -76,8 +76,8 @@ function initialesAvatar(prenom: string, nom: string): string {
 function niveauLabel(missions: number): string {
   const s = toSafeNumber(missions)
   if (s >= 50) return 'Expert'
-  if (s >= 10) return 'Confirme'
-  if (s >= 5) return 'Habitue'
+  if (s >= 10) return 'Confirmé'
+  if (s >= 5) return 'Habitué'
   return 'Nouveau'
 }
 function formatMissionCount(count: number): string {
@@ -85,7 +85,7 @@ function formatMissionCount(count: number): string {
 }
 function formatPresenceSummary(missions: number, absences: number): string {
   if (missions <= 0) return 'Nouveau'
-  if (absences <= 0) return '100% present'
+  if (absences <= 0) return '100% présent'
   if (absences === 1) return '1 absence'
   return `${absences} absences`
 }
@@ -99,14 +99,14 @@ function descriptionCourte(serveur: Serveur): string {
 
   const base =
     missions < 5
-      ? 'Profil debutant motive. Serieux et volontaire, disponible pour des missions courtes et souhaite progresser rapidement.'
+      ? 'Profil débutant motivé. Sérieux et volontaire, disponible pour des missions courtes et souhaite progresser rapidement.'
       : missions < 10
-        ? "Serveur habitue aux missions, fiable et applique. S'adapte rapidement aux environnements de travail."
+        ? "Serveur habitué aux missions, fiable et appliqué. S'adapte rapidement aux environnements de travail."
         : missions < 50
-          ? 'Serveur confirme, autonome et efficace. Bonne gestion du service et des clients.'
-          : 'Serveur experimente, tres fiable et rapide. Habitue aux services exigeants et forte affluence.'
+          ? 'Serveur confirmé, autonome et efficace. Bonne gestion du service et des clients.'
+          : 'Serveur expérimenté, très fiable et rapide. Habitué aux services exigeants et forte affluence.'
 
-  return (taux ?? 0) >= 95 ? `${base} Tres fiable, presence reguliere.` : base
+  return (taux ?? 0) >= 95 ? `${base} Très fiable, présence régulière.` : base
 }
 
 function bioLongue(serveur: Serveur, experiences: ServeurExperience[]): string {
@@ -115,10 +115,10 @@ function bioLongue(serveur: Serveur, experiences: ServeurExperience[]): string {
   const experiencesBio = getServeurExperiencesBio(experiences)
 
   return [
-    `Experiences : ${experiencesBio}`,
-    `Missions realisees : ${missions}`,
-    `Presence : ${formatPresenceSummary(missions, annulees)}`,
-    `Rayon de deplacement : ${serveur.rayon} km autour de ${serveur.ville}`,
+    `Expériences : ${experiencesBio}`,
+    `Missions réalisées : ${missions}`,
+    `Présence : ${formatPresenceSummary(missions, annulees)}`,
+    `Rayon de déplacement : ${serveur.rayon} km autour de ${serveur.ville}`,
     `Absences : ${annulees}`,
     '',
     descriptionCourte(serveur),
@@ -175,7 +175,7 @@ function DispoGrid({ availabilities }: { availabilities: ServeurDisponibiliteHeb
   if (!hasAny) {
     return (
       <View style={dg.empty}>
-        <Text style={dg.emptyTxt}>Aucune disponibilite renseignee</Text>
+        <Text style={dg.emptyTxt}>Aucune disponibilité renseignée</Text>
       </View>
     )
   }
@@ -193,7 +193,7 @@ function DispoGrid({ availabilities }: { availabilities: ServeurDisponibiliteHeb
         ))}
         <View style={dg.legendItem}>
           <View style={[dg.legendDot, dg.legendDotJournee]}>
-            <Text style={[dg.legendInitiale, dg.legendInitialeJournee]}>Journee</Text>
+            <Text style={[dg.legendInitiale, dg.legendInitialeJournee]}>Journée</Text>
           </View>
           <Text style={dg.legendTxt}>Midi + Soir</Text>
         </View>
@@ -225,7 +225,7 @@ function DispoGrid({ availabilities }: { availabilities: ServeurDisponibiliteHeb
               <View style={dg.daySlots}>
                 {isFullDay ? (
                   <View style={[dg.slotDot, dg.slotDotJournee]}>
-                    <Text style={[dg.slotTxt, dg.slotTxtActive]}>Journee</Text>
+                    <Text style={[dg.slotTxt, dg.slotTxtActive]}>Journée</Text>
                   </View>
                 ) : (
                   SLOTS_VISIBLES.map((slot: { key: CanonicalAvailabilitySlotKey; label: string }) => {
@@ -405,7 +405,7 @@ export default function ProfilServeurPublic() {
   const presenceSummary = formatPresenceSummary(missions, noShowCount)
   const presenceRateValue = missions > 0 ? `${getPresenceRate(missions, noShowCount)}%` : 'Nouveau'
   const experienceValue = formatMissionCount(missions)
-  const noteValue = noteAff ?? 'Pas encore note'
+  const noteValue = noteAff ?? 'Pas encore noté'
 
   const presenceBadgeStyle = (() => {
     switch (presenceBadge.tone) {
@@ -430,8 +430,8 @@ export default function ProfilServeurPublic() {
   ].filter(Boolean) as { lbl: string; bg: string; bd: string; txt: string }[]
 
   const quickStats = [
-    { lbl: 'Presence', val: presenceRateValue },
-    { lbl: 'Experience', val: experienceValue },
+    { lbl: 'Présence', val: presenceRateValue },
+    { lbl: 'Expérience', val: experienceValue },
     { lbl: 'Absences', val: `${noShowCount}` },
     { lbl: distanceMetricLabel, val: distanceLabel },
     { lbl: 'Note', val: noteValue },
@@ -457,21 +457,21 @@ export default function ProfilServeurPublic() {
         Alert.alert(
           'Information',
           result.reason === 'already_assigned'
-            ? 'Cette mission est deja pourvue.'
+            ? 'Cette mission est déjà pourvue.'
             : result.reason === 'worker_unavailable'
               ? getServerBusySlotMessage(null, 'profile')
-            : "Impossible de selectionner ce profil."
+            : 'Impossible de sélectionner ce profil.'
         )
         return
       }
 
       setHasPendingCandidature(false)
 
-      Alert.alert('Succes', "Le profil a bien ete selectionne pour cette mission.", [
+      Alert.alert('Succès', 'Le profil a bien été sélectionné pour cette mission.', [
         { text: 'OK', onPress: () => router.replace('/dashboard_patron') },
       ])
     } catch {
-      Alert.alert('Erreur', 'Impossible de selectionner ce profil.')
+      Alert.alert('Erreur', 'Impossible de sélectionner ce profil.')
     } finally {
       setAccepting(false)
     }
@@ -490,7 +490,7 @@ export default function ProfilServeurPublic() {
           <View style={s.headerLeft}>
             <Text style={s.headerNom}>{serveur.prenom} {serveur.nom}</Text>
             <Text style={s.headerSous}>
-              {niveau} - {missions} mission{missions > 1 ? 's' : ''} realisee{missions > 1 ? 's' : ''}
+              {niveau} - {missions} mission{missions > 1 ? 's' : ''} réalisée{missions > 1 ? 's' : ''}
             </Text>
             <View style={s.chipsRow}>
               <View style={s.chip}>
@@ -528,7 +528,7 @@ export default function ProfilServeurPublic() {
         </View>
 
         <View style={s.sectionCard}>
-          <Text style={s.sectionTitle}>Experiences</Text>
+          <Text style={s.sectionTitle}>Expériences</Text>
           {experiences.length > 0 ? (
             <View style={s.experiencesList}>
               {experiences.map((item, index) => (
@@ -542,19 +542,19 @@ export default function ProfilServeurPublic() {
           ) : (
             <View style={s.experienceFallbackCard}>
               <Text style={s.experienceFallbackText}>
-                Aucune experience structuree renseignee pour le moment.
+                Aucune expérience structurée renseignée pour le moment.
               </Text>
             </View>
           )}
         </View>
 
         <View style={s.sectionCard}>
-          <Text style={s.sectionTitle}>Disponibilites habituelles</Text>
+          <Text style={s.sectionTitle}>Disponibilités habituelles</Text>
           <DispoGrid availabilities={availabilities ?? []} />
         </View>
 
         <View style={s.sectionCard}>
-          <Text style={s.sectionTitle}>Reperes rapides</Text>
+          <Text style={s.sectionTitle}>Repères rapides</Text>
 
           <View style={s.metricsGrid}>
             {quickStats.map((item, index) => (
@@ -568,7 +568,7 @@ export default function ProfilServeurPublic() {
 
         <View style={s.sectionCard}>
           <View style={s.avisHeader}>
-            <Text style={s.sectionTitle}>Avis recents</Text>
+            <Text style={s.sectionTitle}>Avis récents</Text>
             {noteAff && (
               <View style={s.avisNoteBadge}>
                 <Text style={s.avisNoteVal}>{noteAff}</Text>
@@ -610,7 +610,7 @@ export default function ProfilServeurPublic() {
         </View>
 
         <TouchableOpacity style={s.secondaryCta} onPress={() => setShowDetail(true)} activeOpacity={0.85}>
-          <Text style={s.secondaryCtaTxt}>Voir les stats completes</Text>
+          <Text style={s.secondaryCtaTxt}>Voir les stats complètes</Text>
         </TouchableOpacity>
 
         {hasPendingCandidature && (
@@ -621,7 +621,7 @@ export default function ProfilServeurPublic() {
             disabled={accepting}
           >
             <Text style={s.primaryCtaTxt}>
-              {accepting ? 'Selection...' : 'Selectionner pour cette mission'}
+              {accepting ? 'Sélection en cours...' : 'Sélectionner pour cette mission'}
             </Text>
           </TouchableOpacity>
         )}
@@ -671,7 +671,7 @@ export default function ProfilServeurPublic() {
 
               {experiences.length > 0 && (
                 <>
-                  <Text style={s.modalSecTitle}>Experiences</Text>
+                  <Text style={s.modalSecTitle}>Expériences</Text>
                   <View style={s.modalExperiencesList}>
                     {experiences.map((item, index) => (
                       <View key={`modal-exp-${index}-${item.poste}`} style={s.modalExperienceCard}>
@@ -682,7 +682,7 @@ export default function ProfilServeurPublic() {
                 </>
               )}
 
-              <Text style={s.modalSecTitle}>Disponibilites habituelles</Text>
+              <Text style={s.modalSecTitle}>Disponibilités habituelles</Text>
 
               <View style={{ marginBottom: 16 }}>
                 <DispoGrid availabilities={availabilities ?? []} />

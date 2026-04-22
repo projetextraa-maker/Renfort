@@ -20,6 +20,22 @@ type AvailabilityCheckOptions = {
   heureFin?: string | null
 }
 
+function normalizeMissionDateValue(value: string | null | undefined): string | null {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+
+  const isoLike = raw.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (isoLike?.[1]) return isoLike[1]
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  const year = parsed.getUTCFullYear()
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function normalizeMissionSlot(value: string | null | undefined): MissionSlot | null {
   const normalized = String(value ?? '').toLowerCase()
   if (normalized === 'midday' || normalized === 'evening' || normalized === 'full') {
@@ -60,34 +76,133 @@ export function isServerAvailableFromData(input: {
   heureDebut?: string | null
   heureFin?: string | null
 }): boolean {
-  if (!isServerAvailableForMission(input.disponibilites, input.date, input.slot)) {
+  const normalizedInputDate = normalizeMissionDateValue(input.date)
+  if (!normalizedInputDate) return false
+
+  if (!isServerAvailableForMission(input.disponibilites, normalizedInputDate, input.slot)) {
     return false
   }
 
   return !(input.activeMissions ?? []).some((mission) => {
     if (!mission?.date) return false
+    const normalizedMissionDate = normalizeMissionDateValue(mission.date)
+    if (!normalizedMissionDate) return false
 
     if (input.heureDebut && input.heureFin && mission.heure_debut && mission.heure_fin) {
       return doMissionRangesOverlap(
         {
-          date: input.date,
+          date: normalizedInputDate,
           heureDebut: input.heureDebut,
           heureFin: input.heureFin,
         },
         {
-          date: mission.date,
+          date: normalizedMissionDate,
           heureDebut: mission.heure_debut,
           heureFin: mission.heure_fin,
         }
       )
     }
 
-    if (mission.date !== input.date) return false
+    if (normalizedMissionDate !== normalizedInputDate) return false
     return doMissionSlotsOverlap(
       input.slot,
       deriveMissionSlot(mission.mission_slot ?? null, mission.heure_debut, mission.heure_fin)
     )
   })
+}
+
+export function explainServerAvailabilityFromData(input: {
+  disponibilites: ServeurDisponibiliteHebdo[]
+  activeMissions?: ActiveMissionAvailabilityRecord[]
+  date: string
+  slot: MissionSlot
+  heureDebut?: string | null
+  heureFin?: string | null
+}): {
+  available: boolean
+  normalizedDate: string | null
+  weeklyMatch: boolean
+  conflictReason: 'time_overlap' | 'slot_overlap' | null
+  conflictingMission: ActiveMissionAvailabilityRecord | null
+} {
+  const normalizedInputDate = normalizeMissionDateValue(input.date)
+  if (!normalizedInputDate) {
+    return {
+      available: false,
+      normalizedDate: null,
+      weeklyMatch: false,
+      conflictReason: null,
+      conflictingMission: null,
+    }
+  }
+
+  const weeklyMatch = isServerAvailableForMission(input.disponibilites, normalizedInputDate, input.slot)
+  if (!weeklyMatch) {
+    return {
+      available: false,
+      normalizedDate: normalizedInputDate,
+      weeklyMatch: false,
+      conflictReason: null,
+      conflictingMission: null,
+    }
+  }
+
+  for (const mission of input.activeMissions ?? []) {
+    if (!mission?.date) continue
+    const normalizedMissionDate = normalizeMissionDateValue(mission.date)
+    if (!normalizedMissionDate) continue
+
+    if (input.heureDebut && input.heureFin && mission.heure_debut && mission.heure_fin) {
+      const overlap = doMissionRangesOverlap(
+        {
+          date: normalizedInputDate,
+          heureDebut: input.heureDebut,
+          heureFin: input.heureFin,
+        },
+        {
+          date: normalizedMissionDate,
+          heureDebut: mission.heure_debut,
+          heureFin: mission.heure_fin,
+        }
+      )
+
+      if (overlap) {
+        return {
+          available: false,
+          normalizedDate: normalizedInputDate,
+          weeklyMatch: true,
+          conflictReason: 'time_overlap',
+          conflictingMission: mission,
+        }
+      }
+
+      continue
+    }
+
+    if (normalizedMissionDate !== normalizedInputDate) continue
+    const overlap = doMissionSlotsOverlap(
+      input.slot,
+      deriveMissionSlot(mission.mission_slot ?? null, mission.heure_debut, mission.heure_fin)
+    )
+
+    if (overlap) {
+      return {
+        available: false,
+        normalizedDate: normalizedInputDate,
+        weeklyMatch: true,
+        conflictReason: 'slot_overlap',
+        conflictingMission: mission,
+      }
+    }
+  }
+
+  return {
+    available: true,
+    normalizedDate: normalizedInputDate,
+    weeklyMatch: true,
+    conflictReason: null,
+    conflictingMission: null,
+  }
 }
 
 export async function isServerAvailable(
@@ -129,6 +244,16 @@ export async function fetchServerAvailabilityMap(
 ): Promise<Record<string, boolean>> {
   const uniqueIds = [...new Set(serveurIds.filter(Boolean))]
   if (uniqueIds.length === 0) return {}
+  const normalizedInputDate = normalizeMissionDateValue(date)
+
+  console.log('server-availability: input', {
+    requestedDate: date,
+    normalizedDate: normalizedInputDate,
+    slot,
+    heureDebut: options?.heureDebut ?? null,
+    heureFin: options?.heureFin ?? null,
+    totalServeurs: uniqueIds.length,
+  })
 
   const [slotsResult, activeMissionsResult] = await Promise.all([
     supabase
@@ -160,15 +285,58 @@ export async function fetchServerAvailabilityMap(
   })
 
   const map: Record<string, boolean> = {}
+  const diagnostics: Array<{
+    serveurId: string
+    available: boolean
+    weeklySlots: string[]
+    activeMissions: Array<{
+      date: string | null
+      heure_debut?: string | null
+      heure_fin?: string | null
+      mission_slot?: string | null
+    }>
+    normalizedDate: string | null
+    weeklyMatch: boolean
+    conflictReason: 'time_overlap' | 'slot_overlap' | null
+  }> = []
+
   uniqueIds.forEach((serveurId) => {
-    map[serveurId] = isServerAvailableFromData({
-      disponibilites: disponibilitesByServeur.get(serveurId) ?? [],
-      activeMissions: activeMissionsByServeur.get(serveurId) ?? [],
+    const weeklyRows = disponibilitesByServeur.get(serveurId) ?? []
+    const activeRows = activeMissionsByServeur.get(serveurId) ?? []
+    const explanation = explainServerAvailabilityFromData({
+      disponibilites: weeklyRows,
+      activeMissions: activeRows,
       date,
       slot,
       heureDebut: options?.heureDebut ?? null,
       heureFin: options?.heureFin ?? null,
     })
+
+    map[serveurId] = explanation.available
+    diagnostics.push({
+      serveurId,
+      available: explanation.available,
+      weeklySlots: weeklyRows.map((row) => `${row.jour}:${row.creneau}`),
+      activeMissions: activeRows.map((row) => ({
+        date: row.date,
+        heure_debut: row.heure_debut ?? null,
+        heure_fin: row.heure_fin ?? null,
+        mission_slot: row.mission_slot ?? null,
+      })),
+      normalizedDate: explanation.normalizedDate,
+      weeklyMatch: explanation.weeklyMatch,
+      conflictReason: explanation.conflictReason,
+    })
+  })
+
+  console.log('server-availability: results', {
+    requestedDate: date,
+    normalizedDate: normalizedInputDate,
+    slot,
+    totalServeurs: uniqueIds.length,
+    availableCount: uniqueIds.filter((serveurId) => map[serveurId]).length,
+    unavailableCount: uniqueIds.filter((serveurId) => !map[serveurId]).length,
+    preview: diagnostics.slice(0, 20),
   })
 
   return map

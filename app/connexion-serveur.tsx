@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { getHomeRouteForRole, resolveAccountRole } from '../lib/auth-role'
 import { supabase } from '../lib/supabase'
 
 const C = {
@@ -36,9 +37,24 @@ export default function ConnexionServeur() {
 
     if (error || !data.user) {
       Alert.alert('Erreur', 'Email ou mot de passe incorrect')
-    } else {
-      router.replace('/(server-tabs)/missions')
+      return
     }
+
+    const accountRole = await resolveAccountRole(data.user.id, data.user.user_metadata?.account_role)
+    if (accountRole === 'serveur') {
+      router.replace(getHomeRouteForRole(accountRole))
+      return
+    }
+
+    if (accountRole === 'patron') {
+      Alert.alert('Information', 'Ce compte est un compte patron. Redirection vers votre espace patron.', [
+        { text: 'OK', onPress: () => router.replace(getHomeRouteForRole(accountRole)) },
+      ])
+      return
+    }
+
+    await supabase.auth.signOut()
+    Alert.alert('Erreur', "Impossible d'identifier le type de compte.")
   }
 
   return (
@@ -53,7 +69,7 @@ export default function ConnexionServeur() {
         <Text style={styles.eyebrow}>RENFORT</Text>
         <Text style={styles.title}>Se connecter</Text>
         <Text style={styles.subtitle}>
-          Retrouvez les extras autour de vous et repondez rapidement aux missions.
+          Retrouvez les extras autour de vous et répondez rapidement aux missions.
         </Text>
 
         <View style={styles.card}>

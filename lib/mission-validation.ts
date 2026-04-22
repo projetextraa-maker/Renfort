@@ -62,6 +62,10 @@ export type MissionValidationSnapshot = {
   check_in_status?: string | null
   engagement_status?: string | null
   dpae_done?: boolean | null
+  dpae_status?: string | null
+  dpae_done_at?: string | null
+  dpae_done_by?: string | null
+  dpae_payload_snapshot?: Record<string, unknown> | null
   date?: string | null
   heure_debut?: string | null
   heure_fin?: string | null
@@ -90,6 +94,12 @@ export type MissionStatusValue =
   | 'active'
   | 'completed'
   | 'cancelled'
+
+export type MissionCheckInBlocker =
+  | 'mission_not_confirmed'
+  | 'contract_patron_signature_missing'
+  | 'contract_worker_signature_missing'
+  | 'dpae_not_confirmed'
 
 function formatMissionMoment(dateValue: string | null | undefined, timeValue: string | null | undefined): string {
   const date = parseMissionDateTime(dateValue, timeValue)
@@ -174,12 +184,36 @@ export function isMissionContractualized(snapshot: MissionValidationSnapshot): b
   return isMissionAgreementConfirmed(snapshot)
 }
 
+export function isMissionContractGenerated(snapshot: MissionValidationSnapshot): boolean {
+  return normalizeContractStatus(snapshot.contract_status) !== 'not_generated'
+}
+
+export function isMissionContractFullySigned(snapshot: MissionValidationSnapshot): boolean {
+  return normalizeContractStatus(snapshot.contract_status) === 'fully_signed'
+}
+
 export function isMissionDpaeDone(snapshot: MissionValidationSnapshot): boolean {
   return snapshot.dpae_done === true
 }
 
+export function normalizeDpaeStatus(value: string | null | undefined): 'not_started' | 'prepared' | 'confirmed' {
+  const normalized = String(value ?? '').toLowerCase()
+  if (normalized === 'prepared' || normalized === 'confirmed') return normalized
+  return 'not_started'
+}
+
+export function isMissionDpaePrepared(snapshot: MissionValidationSnapshot): boolean {
+  const dpaeStatus = normalizeDpaeStatus(snapshot.dpae_status)
+  if (dpaeStatus === 'prepared' || dpaeStatus === 'confirmed') return true
+  return isMissionAgreementConfirmed(snapshot)
+}
+
+export function isMissionDpaeConfirmed(snapshot: MissionValidationSnapshot): boolean {
+  return isMissionDpaeDone(snapshot) || normalizeDpaeStatus(snapshot.dpae_status) === 'confirmed'
+}
+
 export function canStartMissionWithDpae(snapshot: MissionValidationSnapshot): boolean {
-  return snapshot.dpae_done !== false
+  return isMissionDpaeConfirmed(snapshot)
 }
 
 export function getMissionContractualizationState(
@@ -228,20 +262,18 @@ export function getMissionAdministrativeBlockers(
   const contract = normalizeContractStatus(snapshot.contract_status)
   const payment = normalizePaymentStatus(snapshot.payment_status)
 
-  if (snapshot.dpae_done === false) {
+  if (contract === 'not_generated') {
+    blockers.push('Le contrat CHR doit encore etre genere pour cette mission.')
+  } else if (contract === 'generated') {
+    blockers.push('Le contrat attend la signature du patron.')
+  } else if (contract === 'signed_by_patron') {
+    blockers.push('Le contrat attend la signature du serveur.')
+  } else if (contract === 'signed_by_server') {
+    blockers.push('Le contrat attend encore la contre-signature finale du patron.')
+  }
+
+  if (!isMissionDpaeConfirmed(snapshot)) {
     blockers.push('Declaration URSSAF a finaliser avant le debut de mission.')
-  }
-
-  if (contract === 'generated') {
-    blockers.push('Le contrat est pret, mais la signature du patron reste attendue.')
-  }
-
-  if (contract === 'signed_by_patron') {
-    blockers.push('Le contrat attend encore la signature du serveur.')
-  }
-
-  if (contract === 'signed_by_server') {
-    blockers.push('Le contrat attend encore la validation finale du patron.')
   }
 
   if (payment === 'blocked') {
@@ -320,10 +352,33 @@ export function canSignContractByServeur(snapshot: MissionValidationSnapshot): b
   return ['generated', 'signed_by_patron'].includes(normalizeContractStatus(snapshot.contract_status))
 }
 
+export function getCheckInBlockers(snapshot: MissionValidationSnapshot): MissionCheckInBlocker[] {
+  const blockers: MissionCheckInBlocker[] = []
+  const contractStatus = normalizeContractStatus(snapshot.contract_status)
+
+  if (!isMissionAgreementConfirmed(snapshot)) {
+    blockers.push('mission_not_confirmed')
+    return blockers
+  }
+
+  if (contractStatus === 'not_generated' || contractStatus === 'generated') {
+    blockers.push('contract_patron_signature_missing')
+  }
+
+  if (contractStatus === 'not_generated' || contractStatus === 'generated' || contractStatus === 'signed_by_patron') {
+    blockers.push('contract_worker_signature_missing')
+  }
+
+  if (!isMissionDpaeConfirmed(snapshot)) {
+    blockers.push('dpae_not_confirmed')
+  }
+
+  return [...new Set(blockers)]
+}
+
 export function canCheckInMission(snapshot: MissionValidationSnapshot): boolean {
   return (
-    isMissionAgreementConfirmed(snapshot) &&
-    canStartMissionWithDpae(snapshot) &&
+    getCheckInBlockers(snapshot).length === 0 &&
     normalizeCheckInStatus(snapshot.check_in_status) === 'not_checked_in'
   )
 }
@@ -363,6 +418,10 @@ export function getMissionLifecycleIssues(snapshot: MissionValidationSnapshot): 
     issues.push('Mission en cours sans engagement confirme')
   }
 
+  if (missionStatus === 'in_progress' && !isMissionContractFullySigned(snapshot)) {
+    issues.push('Mission demarree sans contrat signe des deux cotes')
+  }
+
   if (missionStatus === 'confirmed' && engagementStatus === 'draft') {
     issues.push('Mission selectionnee encore en attente de validation finale')
   }
@@ -371,7 +430,7 @@ export function getMissionLifecycleIssues(snapshot: MissionValidationSnapshot): 
     issues.push('Paiement libere avant fin de mission')
   }
 
-  if (missionStatus === 'in_progress' && snapshot.dpae_done === false) {
+  if (missionStatus === 'in_progress' && !isMissionDpaeConfirmed(snapshot)) {
     issues.push('Mission demarree alors que la declaration URSSAF n est pas marquee comme faite')
   }
 
@@ -406,11 +465,20 @@ export function getCheckInBlockMessage(
     return 'Validation patron / serveur a finaliser avant le debut de mission.'
   }
 
-  if (!isMissionAgreementConfirmed(snapshot)) {
+  const blockers = getCheckInBlockers(snapshot)
+  if (blockers.includes('mission_not_confirmed')) {
     return 'Validation patron / serveur a finaliser avant le debut de mission.'
   }
-
-  if (snapshot.dpae_done === false) {
+  if (blockers.includes('contract_patron_signature_missing') && blockers.includes('contract_worker_signature_missing')) {
+    return 'Le contrat doit etre signe par l employeur puis par le serveur avant le debut de mission.'
+  }
+  if (blockers.includes('contract_patron_signature_missing')) {
+    return 'La signature employeur est requise avant le debut de mission.'
+  }
+  if (blockers.includes('contract_worker_signature_missing')) {
+    return 'La signature du serveur est requise avant le debut de mission.'
+  }
+  if (blockers.includes('dpae_not_confirmed')) {
     return 'Declaration URSSAF a finaliser avant le debut de mission.'
   }
 
@@ -478,8 +546,8 @@ export function getMissionOperationalState(
   if (missionStatus === 'completed' || checkInStatus === 'checked_out') return 'completed'
   if (missionStatus === 'in_progress' || checkInStatus === 'checked_in') return 'in_progress'
   if (!agreementConfirmed) return 'waiting_validation'
-  if (snapshot.dpae_done === false) return 'administrative_pending'
-  if (snapshot.dpae_done === true) return 'ready_for_check_in'
+  if (!isMissionContractFullySigned(snapshot) || !isMissionDpaeConfirmed(snapshot)) return 'administrative_pending'
+  if (isMissionContractFullySigned(snapshot) && isMissionDpaeConfirmed(snapshot)) return 'ready_for_check_in'
   return 'mission_confirmed'
 }
 
@@ -556,22 +624,26 @@ export function getMissionStatusLabel(snapshot: MissionValidationSnapshot): stri
 }
 
 export function getMissionContractDisplayLabel(snapshot: MissionValidationSnapshot): string {
-  const missionStatusValue = getMissionStatusValue(snapshot)
   const contractStatus = normalizeContractStatus(snapshot.contract_status)
 
-  if (missionStatusValue === 'pending') {
+  if (!isMissionAgreementConfirmed(snapshot)) {
     return 'Sera genere apres confirmation'
   }
 
-  if (contractStatus === 'fully_signed') {
-    return 'Signe'
+  switch (contractStatus) {
+    case 'not_generated':
+      return 'A generer'
+    case 'generated':
+      return 'A signer par le patron'
+    case 'signed_by_patron':
+      return 'A signer par le serveur'
+    case 'signed_by_server':
+      return 'Contre-signature patron a finaliser'
+    case 'fully_signed':
+      return 'Signe'
+    default:
+      return 'En cours'
   }
-
-  if (missionStatusValue === 'cancelled') {
-    return 'Annule'
-  }
-
-  return 'En cours'
 }
 
 export function getMissionValidationSummary(snapshot: MissionValidationSnapshot) {
@@ -592,7 +664,8 @@ export function getMissionValidationSummary(snapshot: MissionValidationSnapshot)
     paymentStatus,
     checkInStatus,
     engagementStatus,
-    dpaeDone: snapshot.dpae_done === true,
+    dpaeDone: isMissionDpaeConfirmed(snapshot),
+    dpaeStatus: normalizeDpaeStatus(snapshot.dpae_status),
     workflowStage: getMissionWorkflowStage(snapshot),
     isContractualized: agreementConfirmed,
     isAgreementConfirmed: agreementConfirmed,
@@ -601,6 +674,7 @@ export function getMissionValidationSummary(snapshot: MissionValidationSnapshot)
     contractualizationState: getMissionContractualizationState(snapshot),
     contractualizationBlockers: getMissionContractualizationBlockers(snapshot),
     administrativeBlockers: getMissionAdministrativeBlockers(snapshot),
+    checkInBlockers: getCheckInBlockers(snapshot),
     isReadyForCheckIn: canCheckInMission(snapshot),
     presenceMessage: getMissionPresenceReadinessMessage(snapshot),
     isPresenceConfirmed: presenceConfirmationStatus === 'confirmed',

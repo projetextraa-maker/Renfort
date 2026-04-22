@@ -17,6 +17,7 @@ export type EngagementRecord = {
   patron_id: string
   serveur_id: string
   status: string | null
+  agreed_hourly_rate?: number | null
   replaced_engagement_id?: string | null
   contract_status?: string | null
   checked_in_at?: string | null
@@ -34,6 +35,7 @@ type RawEngagementRecord = {
   patron_id: string | null
   serveur_id: string | null
   status: string | null
+  agreed_hourly_rate?: number | string | null
   replaced_engagement_id?: string | null
   contract_status?: string | null
   selected_at?: string | null
@@ -53,6 +55,7 @@ export const ENGAGEMENT_COMPAT_SELECT = `
   patron_id,
   serveur_id,
   status,
+  agreed_hourly_rate,
   replaced_engagement_id,
   contract_status,
   selected_at,
@@ -90,6 +93,10 @@ export function normalizeEngagementRecord(raw: RawEngagementRecord | null | unde
     patron_id: String(raw.patron_id),
     serveur_id: String(raw.serveur_id),
     status: normalizeEngagementStatus(raw.status),
+    agreed_hourly_rate:
+      raw.agreed_hourly_rate != null && Number.isFinite(Number(raw.agreed_hourly_rate))
+        ? Number(raw.agreed_hourly_rate)
+        : null,
     replaced_engagement_id: raw.replaced_engagement_id ? String(raw.replaced_engagement_id) : null,
     contract_status: raw.contract_status ?? 'not_generated',
     checked_in_at: raw.checked_in_at ?? null,
@@ -166,19 +173,19 @@ export function canTransitionEngagement(
 export function getEngagementStatusLabel(status: string | null | undefined): string {
   switch (normalizeEngagementStatus(status)) {
     case 'draft':
-      return 'Engagement cree'
+      return 'Engagement créé'
     case 'pending_signature':
       return 'Signatures en attente'
     case 'confirmed':
-      return 'Engagement confirme'
+      return 'Engagement confirmé'
     case 'active':
-      return 'Mission finalisee'
+      return 'Mission en cours'
     case 'completed':
-      return 'Engagement termine'
+      return 'Engagement terminé'
     case 'cancelled':
-      return 'Engagement annule'
+      return 'Engagement annulé'
     default:
-      return 'Engagement cree'
+      return 'Engagement créé'
   }
 }
 
@@ -199,32 +206,27 @@ export function getEngagementWarnings(engagement: EngagementRecord | null): stri
   const status = normalizeEngagementStatus(engagement.status)
 
   if (status === 'draft' && engagement.contract_status && engagement.contract_status !== 'not_generated') {
-    warnings.push('Engagement encore brouillon alors que le contrat a demarre')
+    warnings.push('Engagement encore brouillon alors que le contrat a démarré')
   }
 
   if (status === 'pending_signature' && !engagement.contract_status) {
-    warnings.push('Engagement sans contrat rattache')
+    warnings.push('Engagement sans contrat rattaché')
   }
 
   if (status === 'confirmed' && !engagement.contract_status) {
-    warnings.push('Engagement confirme sans contrat')
+    warnings.push('Engagement confirmé sans contrat')
   }
 
-  if (
-    (status === 'confirmed' || status === 'active') &&
-    engagement.contract_status &&
-    engagement.contract_status !== 'not_generated' &&
-    engagement.contract_status !== 'fully_signed'
-  ) {
-    warnings.push('Administratif contrat encore en cours pour une mission deja confirmee')
+  if (status === 'active' && engagement.contract_status && engagement.contract_status !== 'fully_signed') {
+    warnings.push('Mission en cours alors que le contrat n’est pas signé des deux côtés')
   }
 
   if (status === 'completed' && !engagement.checked_in_at) {
-    warnings.push('Engagement termine sans check-in enregistre')
+    warnings.push('Engagement terminé sans check-in enregistré')
   }
 
   if (status === 'completed' && !engagement.completed_at) {
-    warnings.push('Engagement termine sans horodatage de fin')
+    warnings.push('Engagement terminé sans horodatage de fin')
   }
 
   return warnings
@@ -238,6 +240,18 @@ export async function fetchActiveEngagementForMission(missionId: string): Promis
     .in('status', ['draft', 'pending_signature', 'confirmed', 'active'])
     .order('created_at', { ascending: false })
     .limit(10)
+
+  if (error || !data) return null
+  return pickOperationalEngagement(normalizeEngagementRecords(data as RawEngagementRecord[]))
+}
+
+export async function fetchLatestEngagementForMission(missionId: string): Promise<EngagementRecord | null> {
+  const { data, error } = await supabase
+    .from('engagements')
+    .select(ENGAGEMENT_COMPAT_SELECT)
+    .eq('mission_id', missionId)
+    .order('created_at', { ascending: false })
+    .limit(20)
 
   if (error || !data) return null
   return pickOperationalEngagement(normalizeEngagementRecords(data as RawEngagementRecord[]))
@@ -274,6 +288,7 @@ export async function createEngagementForMissionSelection(input: {
   missionId: string
   patronId: string
   serveurId: string
+  agreedHourlyRate?: number | null
   replacedEngagementId?: string | null
 }): Promise<EngagementRecord | null> {
   const existing = await fetchActiveEngagementForMission(input.missionId)
@@ -291,6 +306,7 @@ export async function createEngagementForMissionSelection(input: {
       serveur_id: input.serveurId,
       status: 'confirmed',
       confirmed_at: nowIso,
+      agreed_hourly_rate: input.agreedHourlyRate ?? null,
       contract_status: 'not_generated',
       replaced_engagement_id: input.replacedEngagementId ?? null,
     })

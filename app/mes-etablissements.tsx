@@ -44,32 +44,32 @@ const EMPTY_DRAFT: Draft = {
 }
 
 function validateDraft(draft: Draft) {
-  if (!draft.nom.trim()) return "Veuillez renseigner le nom de l'etablissement."
-  if (draft.nom.trim().length < 2) return "Le nom de l'etablissement est trop court."
+  if (!draft.nom.trim()) return "Veuillez renseigner le nom de l'établissement."
+  if (draft.nom.trim().length < 2) return "Le nom de l'établissement est trop court."
   if (!draft.code_postal || draft.code_postal.length !== 5) return 'Veuillez renseigner un code postal valide.'
-  if (!draft.ville) return 'Veuillez selectionner une ville.'
+  if (!draft.ville) return 'Veuillez sélectionner une ville.'
   return null
 }
 
 function getFriendlySaveError(errorMessage: string) {
   const lower = errorMessage.toLowerCase()
   if (lower.includes('"name"') && lower.includes('null value')) {
-    return "Le nom de l'etablissement est obligatoire."
+    return "Le nom de l'établissement est obligatoire."
   }
   if (lower.includes('"nom"') && lower.includes('null value')) {
-    return "Le nom de l'etablissement est obligatoire."
+    return "Le nom de l'établissement est obligatoire."
   }
   if (lower.includes('"ville"') && lower.includes('null value')) {
-    return "La ville de l'etablissement est obligatoire. Selectionnez une ville avant d'enregistrer."
+    return "La ville de l'établissement est obligatoire. Sélectionnez une ville avant d'enregistrer."
   }
   if (lower.includes('"adresse"')) {
-    return "L'adresse n'a pas pu etre enregistree. Verifiez le champ adresse."
+    return "L'adresse n'a pas pu être enregistrée. Vérifiez le champ adresse."
   }
-  return "Impossible d'enregistrer cet etablissement pour le moment."
+  return "Impossible d'enregistrer cet établissement pour le moment."
 }
 
 function getFriendlyGenericError() {
-  return 'Une erreur est survenue. Verifiez les champs obligatoires et reessayez.'
+  return 'Une erreur est survenue. Vérifiez les champs obligatoires et réessayez.'
 }
 
 export default function MesEtablissements() {
@@ -237,11 +237,11 @@ export default function MesEtablissements() {
           <Text style={s.backTxt}>Retour</Text>
         </TouchableOpacity>
 
-        <Text style={s.title}>Mes etablissements</Text>
+        <Text style={s.title}>Mes établissements</Text>
         <Text style={s.sub}>Ajoutez plusieurs restos et choisissez lequel est principal.</Text>
 
         <View style={s.formCard}>
-          <Text style={s.sectionTitle}>{draft.id ? 'Modifier un etablissement' : 'Ajouter un etablissement'}</Text>
+          <Text style={s.sectionTitle}>{draft.id ? 'Modifier un établissement' : 'Ajouter un établissement'}</Text>
 
           <Text style={s.label}>Nom *</Text>
           <TextInput
@@ -257,7 +257,7 @@ export default function MesEtablissements() {
             style={s.input}
             value={draft.adresse}
             onChangeText={(value) => setDraft((prev) => ({ ...prev, adresse: value }))}
-            placeholder="12 rue de la Republique"
+            placeholder="12 rue de la République"
             placeholderTextColor="#9A9388"
           />
 
@@ -275,7 +275,7 @@ export default function MesEtablissements() {
           <Text style={s.label}>Ville *</Text>
           <View style={[s.input, s.cityField]}>
             <Text style={draft.ville ? s.cityFieldText : s.cityFieldPlaceholder}>
-              {draft.ville || 'Selectionnez une ville'}
+              {draft.ville || 'Sélectionnez une ville'}
             </Text>
           </View>
 
@@ -284,7 +284,7 @@ export default function MesEtablissements() {
               {citiesLoading ? (
                 <Text style={s.helper}>Recherche des villes...</Text>
               ) : cityOptions.length === 0 ? (
-                <Text style={s.helper}>Aucune ville trouvee pour ce code postal</Text>
+                <Text style={s.helper}>Aucune ville trouvée pour ce code postal</Text>
               ) : (
                 cityOptions.map((city) => {
                   const selected = draft.ville === city.nom && draft.code_postal === city.codePostal
@@ -311,7 +311,7 @@ export default function MesEtablissements() {
             ) : null}
 
             <TouchableOpacity style={[s.saveBtn, saving && s.saveBtnDisabled]} onPress={saveEtablissement} disabled={saving} activeOpacity={0.88}>
-              <Text style={s.saveBtnTxt}>{saving ? 'Enregistrement...' : draft.id ? 'Mettre a jour' : 'Ajouter'}</Text>
+              <Text style={s.saveBtnTxt}>{saving ? 'Enregistrement...' : draft.id ? 'Mettre à jour' : 'Ajouter'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -335,7 +335,7 @@ export default function MesEtablissements() {
               <View style={s.cardActions}>
                 {!item.is_default ? (
                   <TouchableOpacity style={s.secondaryBtn} onPress={() => setDefault(item)} activeOpacity={0.84}>
-                    <Text style={s.secondaryBtnTxt}>Definir comme principal</Text>
+                    <Text style={s.secondaryBtnTxt}>Définir comme principal</Text>
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity style={s.secondaryBtn} onPress={() => editEtablissement(item)} activeOpacity={0.84}>

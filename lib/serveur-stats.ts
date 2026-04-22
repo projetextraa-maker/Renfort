@@ -7,11 +7,21 @@ function normalizeStatus(value: unknown): string {
   return String(value ?? '').toLowerCase()
 }
 
-function getBadgeFromCompletedMissions(completedMissions: number): string | null {
-  if (completedMissions >= 50) return 'platine'
-  if (completedMissions >= 30) return 'or'
-  if (completedMissions >= 10) return 'argent'
-  return null
+export type ServeurExperienceBadgeKey = 'nouveau' | 'confirme' | 'experimente' | 'expert'
+
+export function getServeurExperienceBadgeKey(completedMissions: number): ServeurExperienceBadgeKey {
+  if (completedMissions > 50) return 'expert'
+  if (completedMissions >= 16) return 'experimente'
+  if (completedMissions >= 3) return 'confirme'
+  return 'nouveau'
+}
+
+export function getServeurExperienceBadgeLabel(completedMissions: number): string {
+  const key = getServeurExperienceBadgeKey(completedMissions)
+  if (key === 'expert') return 'Expert'
+  if (key === 'experimente') return 'Experimente'
+  if (key === 'confirme') return 'Confirme'
+  return 'Nouveau'
 }
 
 export type ServeurMissionStats = {
@@ -55,7 +65,7 @@ export async function syncServeurMissionStats(
   serveurId: string
 ): Promise<ServeurMissionStats> {
   const stats = await computeServeurMissionStatsFromAnnonces(serveurId)
-  const badge = getBadgeFromCompletedMissions(stats.completedMissions)
+  const badge = getServeurExperienceBadgeKey(stats.completedMissions)
 
   const updatePayload: Record<string, unknown> = {
     missions_realisees: stats.completedMissions,

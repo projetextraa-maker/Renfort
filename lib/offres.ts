@@ -2,7 +2,7 @@ import { ANNONCE_COMPAT_SELECT, normalizeAnnonceRecords } from './annonce-read'
 import { supabase } from './supabase'
 import { expireOpenAnnonces } from './annonces'
 import { fetchEtablissementNameMapByIds } from './etablissements'
-import { haversineKm, isWithinDistanceRadius } from './location-distance'
+import { hasValidCoordinates, haversineKm, isWithinDistanceRadius } from './location-distance'
 import { ACTIVE_MISSION_READ_STATUSES, OPEN_MISSION_READ_STATUSES, shouldHideMissionFromOpenLists } from './missions'
 import { isServerAvailableFromData } from './server-availability'
 import { type ServeurDisponibiliteHebdo } from './serveur-disponibilites'
@@ -36,7 +36,7 @@ export async function getNearbyOffresForServeur(
     .eq('id', serveurId)
     .single()
 
-  if (serveurError || !serveur || serveur.lat == null || serveur.lng == null) {
+  if (serveurError || !serveur || !hasValidCoordinates(serveur.lat, serveur.lng)) {
     return []
   }
 
@@ -118,7 +118,7 @@ export async function getNearbyOffresForServeur(
       heureDebut: a.heure_debut,
       heureFin: a.heure_fin,
     }))
-    .filter((a: any) => a.lat != null && a.lng != null)
+    .filter((a: any) => hasValidCoordinates(a.lat, a.lng))
     .map((a: any) => ({
       ...a,
       nom_restaurant: (a.etablissement_id ? etablissementMap[String(a.etablissement_id)] : null) ?? patronMap[String(a.patron_id)] ?? 'Restaurant',

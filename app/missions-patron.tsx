@@ -3,7 +3,7 @@ import React, { useCallback, useState } from 'react'
 import { Alert, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import PatronBottomNav from '../components/PatronBottomNav'
 import { ANNONCE_COMPAT_WITH_WORKFLOW_SELECT, normalizeAnnonceRecords, type NormalizedAnnonceRecord } from '../lib/annonce-read'
-import { cancelConfirmedAnnonce, finalizeMissionActivation, markMissionCheckIn, markMissionCheckOut, markMissionDpaeDone, openUrgentMissionReplacement, syncAnnoncesInProgress, updateAnnonceLifecycleStatus } from '../lib/annonces'
+import { cancelConfirmedAnnonce, markMissionCheckIn, markMissionCheckOut, markMissionDpaeDone, openUrgentMissionReplacement, syncAnnoncesInProgress, updateAnnonceLifecycleStatus } from '../lib/annonces'
 import { fetchContractMapForEngagements, getContractWarnings, type ContractRecord } from '../lib/contracts'
 import { EURO } from '../lib/currency'
 import { fetchEtablissementNameMapByIds } from '../lib/etablissements'
@@ -31,6 +31,7 @@ type MissionPatron = Pick<
   | 'payment_status'
   | 'check_in_status'
   | 'dpae_done'
+  | 'dpae_status'
   | 'checked_in_at'
   | 'checked_out_at'
 >
@@ -87,7 +88,8 @@ function getMissionBadge(mission: MissionPatron) {
 
 function buildMissionValidationSnapshot(
   mission: MissionPatron,
-  engagement: EngagementRecord | undefined
+  engagement: EngagementRecord | undefined,
+  contract: ContractRecord | null
 ): MissionValidationSnapshot {
   return {
     statut: mission.statut,
@@ -97,7 +99,8 @@ function buildMissionValidationSnapshot(
     heure_fin: mission.heure_fin,
     engagement_status: engagement?.status ?? null,
     dpae_done: mission.dpae_done ?? null,
-    contract_status: mission.contract_status ?? engagement?.contract_status ?? null,
+    dpae_status: mission.dpae_status ?? null,
+    contract_status: contract?.status ?? null,
     payment_status: mission.payment_status ?? null,
     check_in_status: mission.check_in_status ?? (engagement?.checked_out_at
       ? 'checked_out'
@@ -147,21 +150,25 @@ export default function MissionsPatron() {
         : mission
     )
 
-    const { data: dpaeRows, error: dpaeError } = await supabase
-      .from('annonces')
-      .select('id, dpae_done')
-      .in('id', normalizedMissions.map((mission) => mission.id))
-
     const dpaeMap: Record<string, boolean | null> = {}
+    const dpaeStatusMap: Record<string, string | null> = {}
+    const { data: dpaeRows, error: dpaeError } = await supabase
+      .from('dpae_records')
+      .select('mission_id, status')
+      .in('mission_id', normalizedMissions.map((mission) => mission.id))
+
     if (!dpaeError) {
       ;(dpaeRows ?? []).forEach((row: any) => {
-        dpaeMap[String(row.id)] = typeof row.dpae_done === 'boolean' ? row.dpae_done : null
+        const missionId = String(row.mission_id)
+        dpaeStatusMap[missionId] = row.status ?? 'not_started'
+        dpaeMap[missionId] = row.status === 'confirmed'
       })
     }
 
     const missionsWithDpae = normalizedMissions.map((mission) => ({
       ...mission,
-      dpae_done: Object.prototype.hasOwnProperty.call(dpaeMap, mission.id) ? dpaeMap[mission.id] : mission.dpae_done ?? null,
+      dpae_done: Object.prototype.hasOwnProperty.call(dpaeMap, mission.id) ? dpaeMap[mission.id] : false,
+      dpae_status: Object.prototype.hasOwnProperty.call(dpaeStatusMap, mission.id) ? dpaeStatusMap[mission.id] : 'not_started',
     }))
 
     setMissions(missionsWithDpae)
@@ -258,8 +265,9 @@ export default function MissionsPatron() {
   const handleUrgentReplacement = useCallback(
     (mission: MissionPatron) => {
       const engagement = engagements[mission.id]
+      const contract = engagement ? contracts[engagement.id] ?? null : null
       const blockMessage = getUrgentReplacementBlockMessage(
-        buildMissionValidationSnapshot(mission, engagement)
+        buildMissionValidationSnapshot(mission, engagement, contract)
       )
       if (blockMessage) {
         Alert.alert('Remplacement indisponible', blockMessage)
@@ -294,7 +302,7 @@ export default function MissionsPatron() {
         ]
       )
     },
-    [chargerDonnees, engagements, router]
+    [chargerDonnees, contracts, engagements, router]
   )
 
   const handleTerminerMission = useCallback(
@@ -375,14 +383,25 @@ export default function MissionsPatron() {
 
   const handleMarkDpaeDone = useCallback(
     (missionId: string) => {
-      Alert.alert('Confirmer', 'Marquer la declaration URSSAF comme finalisee pour cette mission ?', [
+      Alert.alert('Declaration URSSAF', 'La declaration URSSAF doit etre realisee hors application par le patron avant le debut de mission. Confirmez ici uniquement si elle a bien ete effectuee.', [
         { text: 'Retour', style: 'cancel' },
         {
-          text: 'DPAE faite',
+          text: 'Voir le detail',
+          onPress: () => {
+            router.push({
+              pathname: '/contrat-engagement',
+              params: {
+                annonceId: missionId,
+              },
+            })
+          },
+        },
+        {
+          text: 'Confirmer la declaration',
           onPress: async () => {
             const result = await markMissionDpaeDone(missionId)
             if (!result.ok) {
-              Alert.alert('Action bloquee', result.message ?? "Impossible d'enregistrer la DPAE.")
+              Alert.alert('Impossible de confirmer la DPAE.', result.message ?? 'Une erreur est survenue.')
               return
             }
             await chargerDonnees()
@@ -390,27 +409,7 @@ export default function MissionsPatron() {
         },
       ])
     },
-    [chargerDonnees]
-  )
-
-  const handleFinalizeMission = useCallback(
-    (missionId: string) => {
-      Alert.alert('Confirmer', 'Finaliser la mission pour debloquer le demarrage ?', [
-        { text: 'Retour', style: 'cancel' },
-        {
-          text: 'Finaliser la mission',
-          onPress: async () => {
-            const result = await finalizeMissionActivation(missionId)
-            if (!result.ok) {
-              Alert.alert('Action bloquee', result.message ?? 'Impossible de finaliser la mission.')
-              return
-            }
-            await chargerDonnees()
-          },
-        },
-      ])
-    },
-    [chargerDonnees]
+    [chargerDonnees, router]
   )
 
   const handleNoShow = useCallback(
@@ -445,7 +444,7 @@ export default function MissionsPatron() {
     const engagement = engagements[mission.id]
     const contract = engagement ? contracts[engagement.id] ?? null : null
     const engagementLabel = getEngagementStatusLabel(engagement?.status)
-    const validationSnapshot = buildMissionValidationSnapshot(mission, engagement)
+    const validationSnapshot = buildMissionValidationSnapshot(mission, engagement, contract)
     const missionSummary = getMissionValidationSummary(validationSnapshot)
     const checkInBlockMessage = getCheckInBlockMessage(validationSnapshot)
     const checkOutBlockMessage = getCheckOutBlockMessage(validationSnapshot)
@@ -466,12 +465,45 @@ export default function MissionsPatron() {
     const shouldShowDpaeAction =
       missionSummary.missionStatusValue === 'admin_pending' ||
       (missionSummary.isAgreementConfirmed && !missionSummary.dpaeDone)
-    const shouldShowFinalizeAction =
-      missionSummary.missionStatusValue === 'confirmed' ||
-      missionSummary.missionStatusValue === 'admin_pending'
-    const primaryAction = shouldShowFinalizeAction ? (
-      <TouchableOpacity style={s.primaryAction} onPress={() => handleFinalizeMission(mission.id)} activeOpacity={0.88}>
-        <Text style={s.primaryActionText}>Finaliser la mission</Text>
+    const dpaeTone = missionSummary.dpaeDone
+      ? { bg: C.greenBg, border: C.greenBd, text: C.green }
+      : { bg: C.terraBg, border: C.terraBd, text: C.terraDark }
+    const dpaeLabel = missionSummary.dpaeDone ? 'URSSAF confirmee' : 'URSSAF a finaliser'
+    const shouldShowContractAction =
+      missionSummary.isAgreementConfirmed &&
+      missionSummary.contractDisplayLabel !== 'Signe' &&
+      Boolean(engagement)
+    const checklistItems = [
+      {
+        label: 'Contrat employeur',
+        done: !missionSummary.checkInBlockers.includes('contract_patron_signature_missing'),
+      },
+      {
+        label: 'Contrat serveur',
+        done: !missionSummary.checkInBlockers.includes('contract_worker_signature_missing'),
+      },
+      {
+        label: 'DPAE confirmee',
+        done: !missionSummary.checkInBlockers.includes('dpae_not_confirmed'),
+      },
+      {
+        label: 'Mission prete',
+        done: missionSummary.isReadyForCheckIn,
+      },
+    ]
+    const primaryAction = shouldShowContractAction ? (
+      <TouchableOpacity style={s.primaryAction} onPress={() => handleViewContract(mission.id, engagement?.id)} activeOpacity={0.88}>
+        <Text style={s.primaryActionText}>
+          {missionSummary.contractDisplayLabel === 'A signer par le patron'
+            ? 'Signer le contrat'
+            : missionSummary.contractDisplayLabel === 'A signer par le serveur'
+              ? 'En attente de signature serveur'
+              : 'Voir le contrat'}
+        </Text>
+      </TouchableOpacity>
+    ) : shouldShowDpaeAction ? (
+      <TouchableOpacity style={s.primaryAction} onPress={() => handleMarkDpaeDone(mission.id)} activeOpacity={0.88}>
+        <Text style={s.primaryActionText}>Declaration URSSAF</Text>
       </TouchableOpacity>
     ) : canShowCheckInAction ? (
       <TouchableOpacity
@@ -511,8 +543,10 @@ export default function MissionsPatron() {
             <Text style={s.infoValue}>{mission.heure_debut} - {mission.heure_fin}</Text>
           </View>
           <View style={s.infoCard}>
-            <Text style={s.infoLabel}>Salaire</Text>
-            <Text style={s.infoValue}>{`${mission.salaire}${EURO} / h brut`}</Text>
+            <Text style={s.infoLabel}>
+              {engagement?.agreed_hourly_rate != null && engagement.agreed_hourly_rate !== mission.salaire ? 'Tarif retenu' : 'Tarif mission'}
+            </Text>
+            <Text style={s.infoValue}>{`${engagement?.agreed_hourly_rate ?? mission.salaire}${EURO} / h brut`}</Text>
           </View>
         </View>
 
@@ -531,6 +565,22 @@ export default function MissionsPatron() {
         <View style={s.assignedRow}>
           <Text style={s.assignedLabel}>Contrat</Text>
           <Text style={s.assignedName}>{missionSummary.contractDisplayLabel}</Text>
+        </View>
+
+        <View style={[s.statusRowCard, { backgroundColor: dpaeTone.bg, borderColor: dpaeTone.border }]}>
+          <Text style={s.statusRowLabel}>URSSAF</Text>
+          <Text style={[s.statusRowValue, { color: dpaeTone.text }]}>{dpaeLabel}</Text>
+        </View>
+
+        <View style={s.checklistCard}>
+          {checklistItems.map((item) => (
+            <View key={`${mission.id}-${item.label}`} style={s.checklistRow}>
+              <Text style={[s.checklistDot, item.done ? s.checklistDotDone : s.checklistDotTodo]}>
+                {item.done ? 'OK' : '...'}
+              </Text>
+              <Text style={[s.checklistText, item.done ? s.checklistTextDone : null]}>{item.label}</Text>
+            </View>
+          ))}
         </View>
 
         {engagement ? (
@@ -564,9 +614,9 @@ export default function MissionsPatron() {
             <TouchableOpacity style={s.criticalAction} onPress={() => handleUrgentReplacement(mission)} activeOpacity={0.88}>
               <Text style={s.criticalActionText}>Remplacement urgent</Text>
             </TouchableOpacity>
-            {shouldShowDpaeAction ? (
+            {shouldShowDpaeAction && !shouldShowContractAction ? (
               <TouchableOpacity style={s.secondaryAction} onPress={() => handleMarkDpaeDone(mission.id)} activeOpacity={0.88}>
-                <Text style={s.secondaryActionText}>Marquer DPAE faite</Text>
+                <Text style={s.secondaryActionText}>Declaration URSSAF</Text>
               </TouchableOpacity>
             ) : null}
             <View style={s.secondaryActionsRow}>
@@ -602,9 +652,9 @@ export default function MissionsPatron() {
                 <Text style={s.secondaryActionText}>{contract?.status === 'signed' ? 'Voir le contrat' : 'Voir / signer le contrat'}</Text>
               </TouchableOpacity>
             )}
-            {shouldShowDpaeAction && (
+            {shouldShowDpaeAction && !shouldShowContractAction && (
               <TouchableOpacity style={s.secondaryAction} onPress={() => handleMarkDpaeDone(mission.id)} activeOpacity={0.88}>
-                <Text style={s.secondaryActionText}>Marquer DPAE faite</Text>
+                <Text style={s.secondaryActionText}>Declaration URSSAF</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={s.softAction} onPress={() => handleAnnulerMission(mission.id)} activeOpacity={0.88}>
@@ -685,6 +735,16 @@ const s = StyleSheet.create({
   assignedRow: { backgroundColor: C.cardWarm, borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 },
   assignedLabel: { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', marginBottom: 4 },
   assignedName: { fontSize: 14, fontWeight: '700', color: C.text },
+  statusRowCard: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 },
+  statusRowLabel: { fontSize: 11, fontWeight: '700', color: C.muted, textTransform: 'uppercase', marginBottom: 4 },
+  statusRowValue: { fontSize: 14, fontWeight: '800' },
+  checklistCard: { backgroundColor: C.cardWarm, borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14 },
+  checklistRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },
+  checklistDot: { width: 26, fontSize: 10, fontWeight: '800' },
+  checklistDotDone: { color: C.green },
+  checklistDotTodo: { color: C.terraDark },
+  checklistText: { fontSize: 13, color: C.softDark, fontWeight: '600' },
+  checklistTextDone: { color: C.text, fontWeight: '800' },
   warningBox: { backgroundColor: C.redBg, borderWidth: 1, borderColor: C.redBd, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 },
   warningTitle: { fontSize: 12, fontWeight: '800', color: C.red, textTransform: 'uppercase', marginBottom: 4 },
   warningText: { fontSize: 12, color: C.red, lineHeight: 18, fontWeight: '600' },

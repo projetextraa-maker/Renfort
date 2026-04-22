@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { fetchCitiesByPostalCode, type FrenchCityOption } from '../lib/french-postal'
+import { getHomeRouteForRole, getLoginRouteForRole } from '../lib/auth-role'
+import { searchFrenchCities, type FrenchCityOption } from '../lib/french-postal'
+import { getFriendlySignupError } from '../lib/supabase-errors'
 import { supabase } from '../lib/supabase'
 
 const C = {
@@ -23,6 +25,7 @@ export default function InscriptionPatron() {
   const [prenom, setPrenom] = useState('')
   const [email, setEmail] = useState('')
   const [telephone, setTelephone] = useState('')
+  const [locationQuery, setLocationQuery] = useState('')
   const [postalCode, setPostalCode] = useState('')
   const [ville, setVille] = useState('')
   const [motDePasse, setMotDePasse] = useState('')
@@ -35,16 +38,15 @@ export default function InscriptionPatron() {
     let cancelled = false
 
     const loadCities = async () => {
-      if (postalCode.length !== 5) {
+      const normalizedQuery = locationQuery.trim()
+      if (normalizedQuery.length < 2) {
         setCityOptions([])
-        setSelectedCity(null)
-        setVille('')
         setCitiesLoading(false)
         return
       }
 
       setCitiesLoading(true)
-      const nextCities = await fetchCitiesByPostalCode(postalCode)
+      const nextCities = await searchFrenchCities(normalizedQuery)
       if (cancelled) return
 
       setCityOptions(nextCities)
@@ -53,6 +55,7 @@ export default function InscriptionPatron() {
       if (!nextCities.some((item) => item.nom === selectedCity?.nom && item.codePostal === selectedCity?.codePostal)) {
         setSelectedCity(null)
         setVille('')
+        setPostalCode('')
       }
     }
 
@@ -61,12 +64,13 @@ export default function InscriptionPatron() {
     return () => {
       cancelled = true
     }
-  }, [postalCode, selectedCity?.codePostal, selectedCity?.nom])
+  }, [locationQuery, selectedCity?.codePostal, selectedCity?.nom])
 
   const handleSelectCity = (city: FrenchCityOption) => {
     setSelectedCity(city)
     setVille(city.nom)
     setPostalCode(city.codePostal)
+    setLocationQuery(`${city.nom} (${city.codePostal})`)
   }
 
   const handleInscription = async () => {
@@ -77,35 +81,46 @@ export default function InscriptionPatron() {
 
     setLoading(true)
 
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password: motDePasse,
+      options: {
+        data: {
+          account_role: 'patron',
+          nom_restaurant: nomRestaurant,
+          prenom,
+          telephone,
+          code_postal: postalCode,
+          ville,
+          lat: selectedCity.lat,
+          lng: selectedCity.lng,
+        },
+      },
     })
 
-    if (authError || !authData.user) {
+    if (authError) {
       setLoading(false)
-      Alert.alert('Erreur', authError?.message || 'Erreur lors de la creation du compte')
+      Alert.alert('Erreur', getFriendlySignupError(authError))
       return
     }
 
-    const { error: dbError } = await supabase.from('patrons').insert([{
-      id: authData.user.id,
-      nom_restaurant: nomRestaurant,
-      prenom,
-      email,
-      telephone,
-      code_postal: postalCode,
-      ville,
-      lat: selectedCity.lat,
-      lng: selectedCity.lng,
-    }])
-
     setLoading(false)
-    if (dbError) {
-      Alert.alert('Erreur', dbError.message)
-    } else {
-      router.push('/dashboard_patron')
-    }
+    const hasSession = Boolean(data.session)
+    Alert.alert(
+      hasSession ? 'Compte créé' : 'Confirmez votre email',
+      hasSession
+        ? 'Votre compte patron est prêt.'
+        : 'Votre compte a bien été créé. Confirmez votre email pour vous connecter.',
+      [
+        {
+          text: 'Continuer',
+          onPress: () => {
+            if (hasSession) router.replace(getHomeRouteForRole('patron'))
+            else router.replace(getLoginRouteForRole('patron'))
+          },
+        },
+      ]
+    )
   }
 
   return (
@@ -118,7 +133,7 @@ export default function InscriptionPatron() {
         </TouchableOpacity>
 
         <Text style={styles.eyebrow}>RENFORT</Text>
-        <Text style={styles.title}>Creer un compte</Text>
+        <Text style={styles.title}>Créer un compte</Text>
         <Text style={styles.subtitle}>
           Lancez votre recherche et trouvez rapidement le bon profil.
         </Text>
@@ -127,39 +142,36 @@ export default function InscriptionPatron() {
           <Text style={styles.label}>Nom du restaurant</Text>
           <TextInput style={styles.input} placeholder="Ex : Brasserie du Vieux Port" placeholderTextColor="#9A9388" value={nomRestaurant} onChangeText={setNomRestaurant} />
 
-          <Text style={styles.label}>Votre prenom</Text>
+          <Text style={styles.label}>Votre prénom</Text>
           <TextInput style={styles.input} placeholder="Ex : Jean" placeholderTextColor="#9A9388" value={prenom} onChangeText={setPrenom} />
 
           <Text style={styles.label}>Email</Text>
           <TextInput style={styles.input} placeholder="jean@restaurant.fr" placeholderTextColor="#9A9388" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
 
-          <Text style={styles.label}>Telephone</Text>
+          <Text style={styles.label}>Téléphone</Text>
           <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={setTelephone} />
 
-          <Text style={styles.label}>Code postal</Text>
+          <Text style={styles.label}>Ville ou code postal</Text>
           <TextInput
             style={styles.input}
-            placeholder="Ex : 13001"
+            placeholder="Ex : 13600 ou La Ciotat"
             placeholderTextColor="#9A9388"
-            keyboardType="number-pad"
-            maxLength={5}
-            value={postalCode}
-            onChangeText={(value) => setPostalCode(value.replace(/\D/g, ''))}
+            autoCapitalize="words"
+            value={locationQuery}
+            onChangeText={(value) => {
+              setLocationQuery(value)
+              setSelectedCity(null)
+              setVille('')
+              setPostalCode('')
+            }}
           />
 
-          <Text style={styles.label}>Ville</Text>
-          <View style={[styles.input, styles.cityField, postalCode.length !== 5 && styles.cityFieldDisabled]}>
-            <Text style={ville ? styles.cityFieldText : styles.cityFieldPlaceholder}>
-              {ville || (postalCode.length === 5 ? 'Selectionnez votre ville' : 'Entrez un code postal valide')}
-            </Text>
-          </View>
-
-          {postalCode.length === 5 && (
+          {locationQuery.trim().length >= 2 && (
             <View style={styles.cityOptionsWrap}>
               {citiesLoading ? (
-                <Text style={styles.cityHelper}>Recherche des villes...</Text>
+                <Text style={styles.cityHelper}>Recherche des suggestions...</Text>
               ) : cityOptions.length === 0 ? (
-                <Text style={styles.cityHelper}>Aucune ville trouvee pour ce code postal</Text>
+                <Text style={styles.cityHelper}>Aucune ville trouvée</Text>
               ) : (
                 cityOptions.map((city) => {
                   const isSelected = selectedCity?.nom === city.nom && selectedCity?.codePostal === city.codePostal
@@ -171,7 +183,7 @@ export default function InscriptionPatron() {
                       activeOpacity={0.86}
                     >
                       <Text style={[styles.cityOptionText, isSelected && styles.cityOptionTextSelected]}>
-                        {city.nom}
+                        {`${city.nom} (${city.codePostal})`}
                       </Text>
                     </TouchableOpacity>
                   )
@@ -181,15 +193,15 @@ export default function InscriptionPatron() {
           )}
 
           <Text style={styles.label}>Mot de passe</Text>
-          <TextInput style={styles.input} placeholder="Minimum 6 caracteres" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={setMotDePasse} />
+          <TextInput style={styles.input} placeholder="Minimum 6 caractères" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={setMotDePasse} />
 
           <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleInscription} disabled={loading} activeOpacity={0.88}>
-            <Text style={styles.buttonText}>{loading ? 'Creation en cours...' : 'Creer mon compte'}</Text>
+            <Text style={styles.buttonText}>{loading ? 'Création en cours...' : 'Créer mon compte'}</Text>
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity style={styles.loginLink} onPress={() => router.push('/connexion-patron')}>
-          <Text style={styles.loginText}>Deja un compte ? Se connecter</Text>
+          <Text style={styles.loginText}>Déjà un compte ? Se connecter</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -228,10 +240,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFCF8',
     marginBottom: 18,
   },
-  cityField: { justifyContent: 'center' },
-  cityFieldDisabled: { backgroundColor: '#F6F1EB' },
-  cityFieldText: { fontSize: 15, color: C.title, fontWeight: '600' },
-  cityFieldPlaceholder: { fontSize: 15, color: '#9A9388' },
   cityOptionsWrap: { marginTop: -8, marginBottom: 18, gap: 8 },
   cityHelper: { fontSize: 13, color: C.muted, lineHeight: 18 },
   cityOption: {
@@ -251,7 +259,6 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
     shadowColor: C.terra,
     shadowOpacity: 0.16,
     shadowOffset: { width: 0, height: 10 },

@@ -1,6 +1,13 @@
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { Alert, Image, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import {
+  getProfilePhotoErrorMessage,
+  pickProfilePhoto,
+  removeProfilePhoto,
+  saveProfilePhotoUrl,
+  uploadProfilePhoto,
+} from '../../lib/profile-photo'
 import { formatServeurExperience, type ServeurExperience } from '../../lib/serveur-experiences'
 import { fetchServeurExperiences } from '../../lib/serveur-experiences-api'
 import { computeServeurMissionStatsFromAnnonces } from '../../lib/serveur-stats'
@@ -26,6 +33,7 @@ export default function ProfilServeurScreen() {
   const [serveur, setServeur] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [experiences, setExperiences] = useState<ServeurExperience[]>([])
+  const [photoLoading, setPhotoLoading] = useState(false)
 
   const chargerProfil = async () => {
     const {
@@ -55,16 +63,79 @@ export default function ProfilServeurScreen() {
   )
 
   const handleDeconnexion = async () => {
-    Alert.alert('Se deconnecter', 'Voulez-vous vous deconnecter ?', [
+    Alert.alert('Se déconnecter', 'Voulez-vous vous déconnecter ?', [
       { text: 'Annuler', style: 'cancel' },
       {
-        text: 'Se deconnecter',
+        text: 'Se déconnecter',
         style: 'destructive',
         onPress: async () => {
           await supabase.auth.signOut()
           router.replace('/')
         },
       },
+    ])
+  }
+
+  const rafraichirServeurPhoto = (photoUrl: string | null) => {
+    setServeur((current: any) => (current ? { ...current, photo_url: photoUrl } : current))
+  }
+
+  const handlePhotoSelection = async (source: 'camera' | 'library') => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user || !serveur) return
+
+    try {
+      setPhotoLoading(true)
+      const photo = await pickProfilePhoto(source)
+      if (!photo) return
+
+      const photoUrl = await uploadProfilePhoto({
+        userId: user.id,
+        role: 'serveur',
+        photo,
+        currentPhotoUrl: serveur.photo_url,
+      })
+
+      await saveProfilePhotoUrl('serveur', user.id, photoUrl)
+      rafraichirServeurPhoto(photoUrl)
+    } catch (error) {
+      console.error('serveur profile photo update error', error)
+      Alert.alert('Photo de profil', getProfilePhotoErrorMessage(error))
+    } finally {
+      setPhotoLoading(false)
+    }
+  }
+
+  const handleRemovePhoto = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user || !serveur?.photo_url) return
+
+    try {
+      setPhotoLoading(true)
+      await removeProfilePhoto('serveur', user.id, serveur.photo_url)
+      rafraichirServeurPhoto(null)
+    } catch (error) {
+      console.error('serveur profile photo delete error', error)
+      Alert.alert('Photo de profil', getProfilePhotoErrorMessage(error))
+    } finally {
+      setPhotoLoading(false)
+    }
+  }
+
+  const openPhotoActions = () => {
+    if (photoLoading) return
+
+    Alert.alert('Photo de profil', 'Choisissez une action.', [
+      { text: 'Prendre une photo', onPress: () => void handlePhotoSelection('camera') },
+      { text: 'Choisir depuis la galerie', onPress: () => void handlePhotoSelection('library') },
+      ...(serveur?.photo_url
+        ? [{ text: 'Supprimer la photo', style: 'destructive' as const, onPress: () => void handleRemovePhoto() }]
+        : []),
+      { text: 'Annuler', style: 'cancel' },
     ])
   }
 
@@ -88,105 +159,113 @@ export default function ProfilServeurScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       <View style={s.header}>
-        {serveur?.photo_url ? (
-          <Image source={{ uri: serveur.photo_url }} style={s.photo} />
-        ) : (
-          <View style={s.avatar}>
-            <Text style={s.avatarText}>{initiales}</Text>
-          </View>
-        )}
-        <Text style={s.nom}>
-          {serveur?.prenom} {serveur?.nom}
-        </Text>
-        <Text style={s.ville}>{serveur?.ville}</Text>
+        <View style={s.heroCard}>
+          <View style={s.heroAccent} />
 
-        <View style={s.statsRow}>
-          <View style={s.stat}>
-            <Text style={[s.statNum, { color: C.accent }]}>{serveur?.missions_realisees || 0}</Text>
-            <Text style={s.statLbl}>Missions</Text>
+          <View style={s.heroRow}>
+            <TouchableOpacity onPress={openPhotoActions} activeOpacity={0.85} disabled={photoLoading} style={s.photoTap}>
+              {serveur?.photo_url ? (
+                <View style={s.photoFrame}>
+                  <Image source={{ uri: serveur.photo_url }} style={s.photo} />
+                </View>
+              ) : (
+                <View style={s.photoFrame}>
+                  <View style={s.avatar}>
+                    <Text style={s.avatarText}>{initiales}</Text>
+                  </View>
+                </View>
+              )}
+              <View style={s.photoOverlay}>
+                <Text style={s.photoOverlayTxt}>{photoLoading ? '...' : '\u270e'}</Text>
+              </View>
+              <Text style={s.photoHint}>{photoLoading ? 'Mise \u00e0 jour...' : ''}</Text>
+            </TouchableOpacity>
+
+            <View style={s.heroInfo}>
+              <Text style={s.nom}>
+                {serveur?.prenom} {serveur?.nom}
+              </Text>
+              <Text style={s.ville}>{'\u{1F4CD}'} {serveur?.ville || 'Ville non renseign\u00e9e'}</Text>
+
+              <View style={s.profileBadge}>
+                <View style={s.profileBadgeDot} />
+                <Text style={s.profileBadgeTxt}>Profil actif</Text>
+              </View>
+            </View>
           </View>
-          <View style={s.statDiv} />
-          <View style={s.stat}>
-            <Text style={[s.statNum, { color: C.amber }]}>
-              {serveur?.score ? Number(serveur.score).toFixed(1) : '-'}
-            </Text>
-            <Text style={s.statLbl}>Note</Text>
-          </View>
-          <View style={s.statDiv} />
-          <View style={s.stat}>
-            <Text style={[s.statNum, { color: tauxPresence >= 80 ? C.accent : C.red }]}>
-              {tauxPresence}%
-            </Text>
-            <Text style={s.statLbl}>Presence</Text>
+
+          <View style={s.summaryGrid}>
+            <View style={[s.summaryCard, s.summaryCardPrimary]}>
+              <Text style={s.summaryEyebrow}>Activit\u00e9</Text>
+              <Text style={[s.summaryValue, { color: C.accent }]}>{serveur?.missions_realisees || 0}</Text>
+              <Text style={s.summaryLabel}>missions r\u00e9alis\u00e9es</Text>
+            </View>
+            <View style={[s.summaryCard, s.summaryCardSecondary]}>
+              <Text style={s.summaryEyebrow}>{serveur?.score ? 'Note' : 'Pr\u00e9sence'}</Text>
+              <Text style={s.summaryValueAlt}>
+                {serveur?.score ? Number(serveur.score).toFixed(1) : `${tauxPresence}%`}
+              </Text>
+              <Text style={s.summaryLabelStrong}>{serveur?.score ? 'moyenne' : 'taux de pr\u00e9sence'}</Text>
+            </View>
           </View>
         </View>
       </View>
 
-      <View style={s.card}>
+      <View style={[s.card, s.firstCard]}>
         <Text style={s.sectionOverline}>PROFIL</Text>
-        <Text style={s.cardTitle}>Ma presentation</Text>
+        <Text style={s.cardTitle}>Ma présentation</Text>
         <Text style={s.bioText}>
           {serveur?.description?.trim()
             ? serveur.description
-            : 'Ajoutez une courte presentation pour aider les patrons a mieux vous choisir.'}
+            : 'Ajoutez une courte présentation pour aider les patrons à mieux vous choisir.'}
         </Text>
       </View>
 
       <View style={s.card}>
         <View style={s.cardRowHeader}>
-          <Text style={s.cardTitle}>Mes experiences</Text>
+          <Text style={s.cardTitle}>Mes expériences</Text>
           <TouchableOpacity onPress={() => router.push('/modifier-profil-serveur')} activeOpacity={0.75}>
             <Text style={s.cardLink}>Modifier</Text>
           </TouchableOpacity>
         </View>
 
-        {experiences.length > 0 ? (
-          <View style={s.expList}>
-            {experiences.map((item, i) => (
-              <View key={`exp-${i}`} style={s.expItem}>
-                <Text style={s.expTxt}>{formatServeurExperience(item)}</Text>
+        <View style={s.expList}>
+          {experiences.length ? (
+            experiences.map((experience, index) => (
+              <View key={experience.id ?? `${experience.poste}-${index}`} style={s.expItem}>
+                <Text style={s.expTxt}>{formatServeurExperience(experience)}</Text>
               </View>
-            ))}
-          </View>
-        ) : (
-          <Text style={s.emptyTxt}>
-            Aucune experience renseignee. Ajoutez-en pour rassurer les patrons.
-          </Text>
-        )}
+            ))
+          ) : (
+            <Text style={s.emptyTxt}>Ajoutez vos premières expériences pour rassurer les patrons.</Text>
+          )}
+        </View>
       </View>
 
       <View style={s.card}>
-        <Text style={s.cardTitle}>Mes coordonnees</Text>
-        <Text style={s.infoTxt}>{serveur?.email}</Text>
-        <Text style={s.infoTxt}>{serveur?.telephone}</Text>
-        <Text style={s.infoTxt}>Rayon : {serveur?.rayon ?? 20} km</Text>
+        <Text style={s.cardTitle}>Mes infos</Text>
+        <Text style={s.infoTxt}>Email : {serveur?.email || 'Non renseigné'}</Text>
+        <Text style={s.infoTxt}>Téléphone : {serveur?.telephone || 'Non renseigné'}</Text>
+        <Text style={s.infoTxt}>Ville : {serveur?.ville || 'Non renseignée'}</Text>
       </View>
 
-      <TouchableOpacity
-        style={s.editBtn}
-        onPress={() => router.push('/modifier-profil-serveur')}
-        activeOpacity={0.85}
-      >
+      <TouchableOpacity style={s.editBtn} onPress={() => router.push('/modifier-profil-serveur')} activeOpacity={0.8}>
         <Text style={s.editBtnTxt}>Modifier mon profil</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={s.referralCard}
-        onPress={() => router.push('/parrainage')}
-        activeOpacity={0.85}
-      >
+      <TouchableOpacity style={s.referralCard} activeOpacity={0.82} onPress={() => router.push('/parrainage')}>
         <View style={s.referralIcon}>
-          <Text style={s.referralIconText}>P</Text>
+          <Text style={s.referralIconText}>%</Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={s.referralTitle}>Parrainage</Text>
-          <Text style={s.referralSub}>Invitez vos amis et gagnez jusqu&apos;a 20 EUR</Text>
+          <Text style={s.referralSub}>Invitez un proche et profitez d’avantages.</Text>
         </View>
-        <Text style={s.referralArrow}>&gt;</Text>
+        <Text style={s.referralArrow}>›</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleDeconnexion} activeOpacity={0.7}>
-        <Text style={s.logoutTxt}>Se deconnecter</Text>
+        <Text style={s.logoutTxt}>Se déconnecter</Text>
       </TouchableOpacity>
     </ScrollView>
   )
@@ -194,48 +273,83 @@ export default function ProfilServeurScreen() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
-  content: { paddingBottom: 120 },
+  content: { paddingBottom: 128 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    backgroundColor: '#1D9E75',
-    paddingTop: 60,
-    paddingBottom: 26,
-    paddingHorizontal: 24,
-    alignItems: 'center',
+  header: { paddingTop: 34, paddingHorizontal: 16, paddingBottom: 0 },
+  heroCard: {
+    backgroundColor: C.card,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
+    shadowColor: '#120E0A',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 24,
+    elevation: 4,
   },
-  avatar: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+  heroAccent: { width: 68, height: 6, borderRadius: 999, backgroundColor: '#E8F5ED', borderWidth: 1, borderColor: '#CFE7D8', marginBottom: 18 },
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 18, marginBottom: 18 },
+  photoTap: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    position: 'relative',
+  },
+  photoFrame: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: '#F4FBF7',
+    borderWidth: 1,
+    borderColor: '#CFE7D8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0F4939',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  avatar: {
+    width: 98,
+    height: 98,
+    borderRadius: 49,
+    backgroundColor: '#E8F5ED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#CFE7D8',
   },
   photo: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.35)',
-    marginBottom: 12,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    width: 98,
+    height: 98,
+    borderRadius: 49,
+    borderWidth: 1.5,
+    borderColor: '#CFE7D8',
+    backgroundColor: '#E8F5ED',
   },
-  avatarText: { fontSize: 26, fontWeight: '800', color: '#fff' },
-  nom: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 4 },
-  ville: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginBottom: 16 },
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  stat: { flex: 1, alignItems: 'center' },
-  statDiv: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.3)' },
-  statNum: { fontSize: 22, fontWeight: '800', marginBottom: 2 },
-  statLbl: { fontSize: 11, color: 'rgba(255,255,255,0.75)' },
+  avatarText: { fontSize: 32, fontWeight: '800', color: C.accent },
+  photoHint: { display: 'none' },
+  photoOverlay: { position: 'absolute', right: 4, bottom: 4, width: 30, height: 30, borderRadius: 15, backgroundColor: '#171614', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.card },
+  photoOverlayTxt: { fontSize: 12, color: '#fff', fontWeight: '800' },
+  heroInfo: { flex: 1 },
+  nom: { fontSize: 28, fontWeight: '800', color: C.title, letterSpacing: -0.5, marginBottom: 6 },
+  ville: { fontSize: 13, color: C.textSoft, marginBottom: 12, fontWeight: '600' },
+  profileBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#F0F8F3', borderWidth: 1, borderColor: '#CFE7D8', alignSelf: 'flex-start' },
+  profileBadgeDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
+  profileBadgeTxt: { fontSize: 12, color: C.accent, fontWeight: '800' },
+  summaryGrid: { flexDirection: 'row', gap: 12, width: '100%' },
+  summaryCard: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 16 },
+  summaryCardPrimary: { backgroundColor: C.cardSoft, borderColor: C.borderSoft },
+  summaryCardSecondary: { backgroundColor: '#F0F8F3', borderColor: '#CFE7D8' },
+  summaryEyebrow: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.1, color: C.textMuted, fontWeight: '700', marginBottom: 10 },
+  summaryValue: { fontSize: 28, fontWeight: '800', color: C.title, marginBottom: 4, letterSpacing: -0.6 },
+  summaryValueAlt: { fontSize: 24, fontWeight: '800', color: C.title, marginBottom: 6, letterSpacing: -0.5 },
+  summaryLabel: { fontSize: 12, color: C.textSoft, fontWeight: '600', lineHeight: 16 },
+  summaryLabelStrong: { fontSize: 13, color: C.accent, fontWeight: '700' },
+  firstCard: { marginTop: 28 },
   card: {
     backgroundColor: C.card,
     margin: 16,

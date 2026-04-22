@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { ServeurExperience } from './serveur-experiences'
+import { normalizeAnnoncePostes } from './annonce-postes'
 
 function normalizeRow(row: any): ServeurExperience {
   return {
@@ -23,6 +24,33 @@ export async function fetchServeurExperiences(serveurId: string): Promise<Serveu
   }
 
   return data.map(normalizeRow)
+}
+
+export async function fetchServeurExperiencePostesMap(
+  serveurIds: string[]
+): Promise<Record<string, string[]>> {
+  const uniqueIds = [...new Set(serveurIds.filter(Boolean))]
+  if (uniqueIds.length === 0) return {}
+
+  const { data, error } = await supabase
+    .from('serveur_experiences')
+    .select('serveur_id, poste')
+    .in('serveur_id', uniqueIds)
+
+  if (error || !data) {
+    console.log('fetchServeurExperiencePostesMap error', error)
+    return {}
+  }
+
+  const map: Record<string, string[]> = {}
+  for (const row of data as { serveur_id?: string | null; poste?: string | null }[]) {
+    const serveurId = String(row.serveur_id ?? '').trim()
+    if (!serveurId) continue
+    const current = map[serveurId] ?? []
+    map[serveurId] = normalizeAnnoncePostes([...current, row.poste ?? ''])
+  }
+
+  return map
 }
 
 export async function replaceServeurExperiences(

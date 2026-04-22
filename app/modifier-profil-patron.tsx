@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { fetchCitiesByPostalCode, type FrenchCityOption } from '../lib/french-postal'
+import { getFriendlyWriteError } from '../lib/supabase-errors'
 import { supabase } from '../lib/supabase'
 
 const C = {
@@ -128,7 +129,8 @@ export default function ModifierProfilPatron() {
 
     setLoading(false)
     if (error) {
-      Alert.alert('Erreur', error.message)
+      console.error('modifier-profil-patron update error', error)
+      Alert.alert('Erreur', getFriendlyWriteError(error, 'Impossible de mettre a jour le profil pour le moment.'))
     } else {
       Alert.alert('Succes', 'Profil mis a jour !', [
         { text: 'OK', onPress: () => router.back() },

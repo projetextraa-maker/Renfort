@@ -25,7 +25,7 @@ const geocoderVille = async (ville: string): Promise<{ lat: number; lng: number 
 
 // Constants
 
-const POSTE_OPTIONS   = ['Serveur', 'Barman', 'Runner', 'Chef de rang', 'Plongeur', 'Autre']
+const POSTE_OPTIONS   = ['Barman', 'Runner', 'Plongeur', 'Chef de rang', 'Autre']
 const SALAIRE_OPTIONS = ['12', '13', '14', '15']
 
 type PresetKey = 'Midi' | 'Journee' | 'Soir'
@@ -56,12 +56,12 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 
 function marketRangeLabel(poste: string) {
   const p = poste.toLowerCase()
-  if (p.includes('serveur')) return `Tarif minimum recommande : 12${EURO} a 14${EURO} / h brut`
-  if (p.includes('bar'))     return `Tarif minimum recommande : 12${EURO} a 15${EURO} / h brut`
-  if (p.includes('runner'))  return `Tarif minimum recommande : 12${EURO} a 13${EURO} / h brut`
-  if (p.includes('chef') || p.includes('rang')) return `Tarif minimum recommande : 13${EURO} a 16${EURO} / h brut`
-  if (p.includes('plong'))   return `Tarif minimum recommande : 12${EURO} a 13${EURO} / h brut`
-  return `Tarif minimum recommande : 12${EURO} a 15${EURO} / h brut`
+  if (p.includes('serveur')) return `Tarif minimum recommandé : 12${EURO} à 14${EURO} / h brut`
+  if (p.includes('bar'))     return `Tarif minimum recommandé : 12${EURO} à 15${EURO} / h brut`
+  if (p.includes('runner'))  return `Tarif minimum recommandé : 12${EURO} à 13${EURO} / h brut`
+  if (p.includes('chef') || p.includes('rang')) return `Tarif minimum recommandé : 13${EURO} à 16${EURO} / h brut`
+  if (p.includes('plong'))   return `Tarif minimum recommandé : 12${EURO} à 13${EURO} / h brut`
+  return `Tarif minimum recommandé : 12${EURO} à 15${EURO} / h brut`
 }
 function marketMinimum(poste: string) {
   return poste.toLowerCase().includes('chef') || poste.toLowerCase().includes('rang') ? 13 : 12
@@ -99,7 +99,7 @@ function formatDateValue(d: Date) { return d.toISOString().slice(0, 10) }
 function slotLabel(slot: MissionSlot): string {
   if (slot === 'midday')  return 'Midi'
   if (slot === 'evening') return 'Soir'
-  return 'Journee (Midi + Soir)'
+  return 'Journée (Midi + Soir)'
 }
 
 function getFriendlyAnnonceError(errorMessage: string) {
@@ -121,6 +121,8 @@ function getFriendlyAnnonceError(errorMessage: string) {
 
 function validateMissionDraft(input: {
   postes: string[]
+  selectedPoste: string
+  customPoste: string
   date: string
   salaire: string
   etablissementId: string | null
@@ -131,6 +133,7 @@ function validateMissionDraft(input: {
   finSoir: string
 }) {
   if (input.postes.length === 0) return 'Veuillez choisir au moins un poste.'
+  if (input.selectedPoste === 'Autre' && !input.customPoste.trim()) return 'Veuillez préciser un autre poste.'
   if (!input.date) return 'Veuillez choisir une date.'
   if (!input.etablissementId) return 'Veuillez configurer un etablissement avant de publier.'
   if (!input.salaire || Number.isNaN(parseFloat(input.salaire))) return 'Veuillez renseigner une remuneration valide.'
@@ -165,7 +168,7 @@ function TimeBlock({ title, debut, fin, onPickDebut, onPickFin, onAdjustDebut, o
       </View>
       <View style={tb.row}>
         <View style={tb.col}>
-          <Text style={tb.label}>Debut</Text>
+          <Text style={tb.label}>Début</Text>
           <TouchableOpacity style={tb.timeField} onPress={onPickDebut} activeOpacity={0.85}>
             <Text style={tb.timeValue}>{debut}</Text>
             <Text style={tb.timeMeta}>Choisir</Text>
@@ -196,7 +199,7 @@ function TimeBlock({ title, debut, fin, onPickDebut, onPickFin, onAdjustDebut, o
 export default function PosterAnnonce() {
   const router = useRouter()
 
-  const [selectedPostes, setSelectedPostes] = useState<string[]>(['Serveur'])
+  const [selectedPoste,  setSelectedPoste]  = useState<string>('Barman')
   const [customPoste,    setCustomPoste]    = useState('')
   const [date,           setDate]           = useState('')
   const [customDate,     setCustomDate]     = useState(false)
@@ -222,13 +225,12 @@ export default function PosterAnnonce() {
   type PickerTarget = 'debut-midi' | 'fin-midi' | 'debut-soir' | 'fin-soir'
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
 
-  const resolvedPostes = normalizeAnnoncePostes([
-    ...selectedPostes.filter((item) => item !== 'Autre'),
-    customPoste.trim(),
-  ])
+  const resolvedPostes = normalizeAnnoncePostes(
+    selectedPoste === 'Autre' ? customPoste.trim() : selectedPoste
+  )
   const posteLabel = buildAnnoncePosteLabel(resolvedPostes)
   const salaireValue = parseFloat(salaire || '0')
-  const isBelowMin   = !Number.isNaN(salaireValue) && salaireValue < marketMinimum(posteLabel || 'Serveur')
+  const isBelowMin   = !Number.isNaN(salaireValue) && salaireValue < marketMinimum(posteLabel || 'Barman')
   const selectedEtablissement = etablissements.find((item) => item.id === selectedEtablissementId) ?? null
 
   const isFull    = missionSlot === 'full'
@@ -305,7 +307,7 @@ export default function PosterAnnonce() {
 
   const pickerTitle = (): string => {
     if (!pickerTarget) return ''
-    if (pickerTarget === 'debut-midi') return 'Debut du service midi'
+    if (pickerTarget === 'debut-midi') return 'Début du service midi'
     if (pickerTarget === 'fin-midi')   return 'Fin du service midi'
     if (pickerTarget === 'debut-soir') return 'Debut du service soir'
     return 'Fin du service soir'
@@ -334,6 +336,8 @@ export default function PosterAnnonce() {
 
     const validationError = validateMissionDraft({
       postes: resolvedPostes,
+      selectedPoste,
+      customPoste,
       date,
       salaire,
       etablissementId: etablissement?.id ?? null,
@@ -350,7 +354,7 @@ export default function PosterAnnonce() {
     }
 
     if (!etablissement) {
-      Alert.alert('Erreur', "Veuillez choisir un etablissement avant de publier.")
+      Alert.alert('Erreur', "Veuillez choisir un établissement avant de publier.")
       return
     }
 
@@ -362,54 +366,36 @@ export default function PosterAnnonce() {
     // heure_debut / heure_fin = legacy fields for display / compatibility
     const heureDebut = isMidi || isFull ? debutMidi : debutSoir
     const heureFin   = isSoir || isFull ? finSoir   : finMidi
-
-    const { data, error } = await supabase.from('annonces').insert([{
-      poste:             posteLabel,
-      date,
-      heure_debut:      heureDebut,
-      heure_fin:        heureFin,
-      heure_debut_midi: isMidi || isFull ? debutMidi : null,
-      heure_fin_midi:   isMidi || isFull ? finMidi   : null,
-      heure_debut_soir: isSoir || isFull ? debutSoir : null,
-      heure_fin_soir:   isSoir || isFull ? finSoir   : null,
-      mission_slot:     missionSlot,
-      salaire:          parseFloat(salaire),
-      description,
-      statut:           'open',
-      ville:            etablissement.ville,
-      patron_id:        patronId,
-      etablissement_id: etablissement.id,
-      lat:              coords?.lat ?? null,
-      lng:              coords?.lng ?? null,
-    }]).select()
-
     setLoading(false)
-    if (error) {
-      console.error('handlePublier annonce insert error', error)
-      Alert.alert('Erreur', getFriendlyAnnonceError(error.message))
-      return
-    }
-
-    await touchEtablissementLastUsed(patronId, etablissement.id)
-    await notifierServeursProches(coords)
 
     router.push({
       pathname: '/serveurs-disponibles',
-      params:   { annonceId: data[0].id, ville: etablissement.ville },
+      params: {
+        preview: '1',
+        poste: posteLabel,
+        postes: resolvedPostes.join('|'),
+        date,
+        heureDebut,
+        heureFin,
+        heureDebutMidi: isMidi || isFull ? debutMidi : '',
+        heureFinMidi: isMidi || isFull ? finMidi : '',
+        heureDebutSoir: isSoir || isFull ? debutSoir : '',
+        heureFinSoir: isSoir || isFull ? finSoir : '',
+        missionSlot,
+        salaire,
+        description,
+        ville: etablissement.ville,
+        etablissementId: etablissement.id,
+        lat: coords?.lat != null ? String(coords.lat) : '',
+        lng: coords?.lng != null ? String(coords.lng) : '',
+      },
     })
   }
 
   const selectPoste = (v: string) => {
-    if (v === 'Autre') {
-      setSelectedPostes((prev) => (prev.includes('Autre') ? prev : [...prev, 'Autre']))
-      return
-    }
-    setSelectedPostes((prev) => {
-      const next = new Set(prev)
-      if (next.has(v)) next.delete(v)
-      else next.add(v)
-      return Array.from(next)
-    })
+    if (v === selectedPoste) return
+    setSelectedPoste(v)
+    if (v !== 'Autre') setCustomPoste('')
   }
 
   return (
@@ -422,17 +408,17 @@ export default function PosterAnnonce() {
         </TouchableOpacity>
 
         <Text style={s.title}>Nouvelle mission</Text>
-        <Text style={s.subtitle}>Creez votre recherche en quelques etapes</Text>
+        <Text style={s.subtitle}>Créez votre recherche en quelques étapes</Text>
 
         {/* POSTE */}
         <View style={s.sectionCard}>
           <Text style={s.sectionEyebrow}>Mission</Text>
           <Text style={s.sectionTitle}>Quel renfort vous faut-il ?</Text>
 
-          <Text style={s.label}>Postes recherches *</Text>
+          <Text style={s.label}>Poste recherché *</Text>
           <View style={s.chipsWrap}>
             {POSTE_OPTIONS.map(o => {
-              const sel = o === 'Autre' ? selectedPostes.includes('Autre') : selectedPostes.includes(o)
+              const sel = selectedPoste === o
               return (
                 <TouchableOpacity key={o} style={[s.chip, sel && s.chipActive]} onPress={() => selectPoste(o)} activeOpacity={0.82}>
                   <Text style={[s.chipText, sel && s.chipTextActive]}>{o}</Text>
@@ -440,12 +426,12 @@ export default function PosterAnnonce() {
               )
             })}
           </View>
-          {selectedPostes.includes('Autre') && (
-            <TextInput style={s.input} placeholder="Precisez un autre poste" placeholderTextColor="#8D857B" value={customPoste} onChangeText={setCustomPoste} />
+          {selectedPoste === 'Autre' && (
+            <TextInput style={s.input} placeholder="Précisez un autre poste" placeholderTextColor="#8D857B" value={customPoste} onChangeText={setCustomPoste} />
           )}
           {posteLabel ? <Text style={s.selectionSummary}>{posteLabel}</Text> : null}
 
-          <Text style={s.label}>Etablissement utilise</Text>
+          <Text style={s.label}>Établissement utilisé</Text>
           <View style={s.etablissementInlineCard}>
             <View style={{ flex: 1 }}>
               <Text style={s.etablissementInlineName}>{selectedEtablissement?.nom ?? 'Aucun etablissement configure'}</Text>
@@ -582,7 +568,7 @@ export default function PosterAnnonce() {
           <View style={s.salaryCard}>
             <Text style={s.salaryValue}>{`${salaire || '12'}${EURO} / h brut`}</Text>
           </View>
-          <Text style={s.marketHint}>{isBelowMin ? 'Ce tarif est inferieur au minimum recommande.' : marketRangeLabel(posteLabel || 'Serveur')}</Text>
+          <Text style={s.marketHint}>{isBelowMin ? 'Ce tarif est inferieur au minimum recommande.' : marketRangeLabel(posteLabel || 'Barman')}</Text>
           {isBelowMin && <Text style={s.marketBoost}>Augmentez votre tarif pour recevoir plus de candidatures.</Text>}
           <View style={s.chipsWrap}>
             {SALAIRE_OPTIONS.map(o => (

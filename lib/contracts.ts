@@ -76,7 +76,11 @@ export type ContractRecord = {
   contract_type: string
   generated_at: string | null
   patron_signed_at: string | null
+  patron_signed_by_user_id?: string | null
+  patron_sign_role?: string | null
   worker_signed_at: string | null
+  worker_signed_by_user_id?: string | null
+  worker_sign_role?: string | null
   cancelled_at: string | null
   template_version: string | null
   payload_snapshot: ContractPayloadSnapshot
@@ -95,7 +99,11 @@ type RawContractRecord = {
   contract_type?: string | null
   generated_at?: string | null
   patron_signed_at?: string | null
+  patron_signed_by_user_id?: string | null
+  patron_sign_role?: string | null
   worker_signed_at?: string | null
+  worker_signed_by_user_id?: string | null
+  worker_sign_role?: string | null
   cancelled_at?: string | null
   template_version?: string | null
   payload_snapshot?: ContractPayloadSnapshot
@@ -104,6 +112,29 @@ type RawContractRecord = {
 }
 
 export const CONTRACT_COMPAT_SELECT = `
+  id,
+  engagement_id,
+  mission_id,
+  patron_id,
+  serveur_id,
+  etablissement_id,
+  status,
+  contract_type,
+  generated_at,
+  patron_signed_at,
+  patron_signed_by_user_id,
+  patron_sign_role,
+  worker_signed_at,
+  worker_signed_by_user_id,
+  worker_sign_role,
+  cancelled_at,
+  template_version,
+  payload_snapshot,
+  created_at,
+  updated_at
+`
+
+const CONTRACT_BASE_SELECT = `
   id,
   engagement_id,
   mission_id,
@@ -131,8 +162,18 @@ function isMissingContractsSchemaError(error: unknown): boolean {
   return (
     message.includes("could not find the table 'contracts'") ||
     message.includes('relation "contracts" does not exist') ||
-    message.includes("could not find the 'contracts'") ||
-    message.includes("schema cache")
+    message.includes("could not find the 'contracts'")
+  )
+}
+
+function isMissingContractsAuditColumnError(error: unknown): boolean {
+  const message = String((error as { message?: string } | null)?.message ?? '').toLowerCase()
+  return (
+    (message.includes('patron_signed_by_user_id') ||
+      message.includes('patron_sign_role') ||
+      message.includes('worker_signed_by_user_id') ||
+      message.includes('worker_sign_role')) &&
+    (message.includes('schema cache') || message.includes('does not exist'))
   )
 }
 
@@ -155,13 +196,13 @@ export function getContractStatusLabel(status: string | null | undefined): strin
     case 'draft':
       return 'Brouillon'
     case 'pending_patron_signature':
-      return 'Signature patron attendue'
+      return 'Contrat à signer par le patron'
     case 'pending_worker_signature':
-      return 'Signature serveur attendue'
+      return 'Contrat à signer par le serveur'
     case 'signed':
-      return 'Signe'
+      return 'Contrat signé'
     case 'cancelled':
-      return 'Annule'
+      return 'Annulé'
     default:
       return 'Brouillon'
   }
@@ -181,7 +222,11 @@ function normalizeContractRecord(raw: RawContractRecord | null | undefined): Con
     contract_type: raw.contract_type ?? 'extra_mission',
     generated_at: raw.generated_at ?? null,
     patron_signed_at: raw.patron_signed_at ?? null,
+    patron_signed_by_user_id: raw.patron_signed_by_user_id ?? null,
+    patron_sign_role: raw.patron_sign_role ?? null,
     worker_signed_at: raw.worker_signed_at ?? null,
+    worker_signed_by_user_id: raw.worker_signed_by_user_id ?? null,
+    worker_sign_role: raw.worker_sign_role ?? null,
     cancelled_at: raw.cancelled_at ?? null,
     template_version: raw.template_version ?? null,
     payload_snapshot: raw.payload_snapshot ?? null,
@@ -230,7 +275,7 @@ function toLegacyMissionContractStatus(status: ContractStatus): 'not_generated' 
 async function fetchEngagementById(engagementId: string): Promise<EngagementRecord | null> {
   const { data, error } = await supabase
     .from('engagements')
-    .select('id, mission_id, patron_id, serveur_id, status, replaced_engagement_id, contract_status, checked_in_at, checked_out_at, completed_at, cancelled_at, cancelled_reason, created_at, updated_at')
+    .select('id, mission_id, patron_id, serveur_id, status, agreed_hourly_rate, replaced_engagement_id, contract_status, checked_in_at, checked_out_at, completed_at, cancelled_at, cancelled_reason, created_at, updated_at')
     .eq('id', engagementId)
     .maybeSingle()
 
@@ -384,7 +429,7 @@ export async function buildContractPayloadFromEngagement(
       heure_fin_midi: mission.heure_fin_midi ?? null,
       heure_debut_soir: mission.heure_debut_soir ?? null,
       heure_fin_soir: mission.heure_fin_soir ?? null,
-      salaire_brut_horaire: mission.salaire ?? null,
+      salaire_brut_horaire: engagement.agreed_hourly_rate ?? mission.salaire ?? null,
       ville: mission.ville ?? null,
       description: mission.description ?? null,
     },
@@ -406,7 +451,7 @@ export async function buildContractPayloadFromEngagement(
     },
     etablissement,
     legal: {
-      employer_label: patronData?.nom_restaurant ?? etablissement.nom ?? 'Etablissement employeur',
+      employer_label: patronData?.nom_restaurant ?? etablissement.nom ?? 'Établissement employeur',
       platform_role: "La plateforme met en relation les parties mais n'est pas l'employeur.",
       convention_collective: null,
     },
@@ -421,6 +466,18 @@ export async function getContractForEngagement(engagementId: string): Promise<Co
       .eq('engagement_id', engagementId)
       .order('created_at', { ascending: false })
       .limit(10)
+
+    if (error && isMissingContractsAuditColumnError(error)) {
+      const fallback = await supabase
+        .from('contracts')
+        .select(CONTRACT_BASE_SELECT)
+        .eq('engagement_id', engagementId)
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (fallback.error || !fallback.data) return null
+      return pickOperationalContract(normalizeContractRecords(fallback.data as RawContractRecord[]))
+    }
 
     if (error || !data) return null
     return pickOperationalContract(normalizeContractRecords(data as RawContractRecord[]))
@@ -441,6 +498,30 @@ export async function fetchContractMapForEngagements(
       .select(CONTRACT_COMPAT_SELECT)
       .in('engagement_id', uniqueIds)
       .order('created_at', { ascending: false })
+
+    if (error && isMissingContractsAuditColumnError(error)) {
+      const fallback = await supabase
+        .from('contracts')
+        .select(CONTRACT_BASE_SELECT)
+        .in('engagement_id', uniqueIds)
+        .order('created_at', { ascending: false })
+
+      if (fallback.error || !fallback.data) return {}
+
+      const grouped = new Map<string, ContractRecord[]>()
+      for (const item of normalizeContractRecords(fallback.data as RawContractRecord[])) {
+        const current = grouped.get(item.engagement_id) ?? []
+        current.push(item)
+        grouped.set(item.engagement_id, current)
+      }
+
+      const map: Record<string, ContractRecord> = {}
+      for (const [engagementId, items] of grouped.entries()) {
+        const picked = pickOperationalContract(items)
+        if (picked) map[engagementId] = picked
+      }
+      return map
+    }
 
     if (error || !data) return {}
 
@@ -467,7 +548,7 @@ export async function createDraftContractForEngagement(
 ): Promise<ContractActionResult> {
   const engagement = await fetchEngagementById(engagementId)
   if (!engagement) {
-    return { ok: false, reason: 'not_found', message: 'Aucun engagement actif trouve pour ce contrat.' }
+    return { ok: false, reason: 'not_found', message: 'Aucun engagement actif trouvé pour ce contrat.' }
   }
 
   const existing = await getContractForEngagement(engagementId)
@@ -477,12 +558,12 @@ export async function createDraftContractForEngagement(
 
   const payloadSnapshot = await buildContractPayloadFromEngagement(engagementId)
   if (!payloadSnapshot) {
-    return { ok: false, reason: 'blocked', message: 'Le contrat ne peut pas etre prepare sans les donnees de mission et d engagement.' }
+    return { ok: false, reason: 'blocked', message: 'Le contrat ne peut pas être préparé sans les données de mission et d’engagement.' }
   }
 
   const nowIso = new Date().toISOString()
   try {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('contracts')
       .insert({
         engagement_id: engagement.id,
@@ -490,34 +571,32 @@ export async function createDraftContractForEngagement(
         patron_id: engagement.patron_id,
         serveur_id: engagement.serveur_id,
         etablissement_id: payloadSnapshot.etablissement.id,
-        status: 'draft',
+        status: 'pending_patron_signature',
         contract_type: payloadSnapshot.contract_type,
         generated_at: nowIso,
         template_version: payloadSnapshot.template_version,
         payload_snapshot: payloadSnapshot,
       })
-      .select(CONTRACT_COMPAT_SELECT)
-      .single()
 
     if (error) {
       if (isMissingContractsSchemaError(error)) {
-        return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit etre creee avant de generer le contrat.' }
+        return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit être créée avant de générer le contrat.' }
       }
-      return { ok: false, reason: 'update_failed', message: "Impossible de creer le contrat pour l'instant." }
+      return { ok: false, reason: 'update_failed', message: "Impossible de créer le contrat pour l'instant." }
     }
 
-    const contract = normalizeContractRecord(data as RawContractRecord)
+    const contract = await getContractForEngagement(engagement.id)
     if (!contract) {
-      return { ok: false, reason: 'update_failed', message: 'Le contrat a ete cree mais sa lecture a echoue.' }
+      return { ok: false, reason: 'update_failed', message: 'Le contrat a été créé mais sa lecture a échoué.' }
     }
 
     await syncLegacyContractState({ contract, engagement })
     return { ok: true, contract, changed: true }
   } catch (error) {
     if (isMissingContractsSchemaError(error)) {
-      return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit etre creee avant de generer le contrat.' }
+      return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit être créée avant de générer le contrat.' }
     }
-    return { ok: false, reason: 'update_failed', message: "Impossible de creer le contrat pour l'instant." }
+    return { ok: false, reason: 'update_failed', message: "Impossible de créer le contrat pour l'instant." }
   }
 }
 
@@ -527,7 +606,7 @@ async function signContractInternal(
 ): Promise<ContractActionResult> {
   const engagement = await fetchEngagementById(engagementId)
   if (!engagement) {
-    return { ok: false, reason: 'not_found', message: 'Aucun engagement trouve.' }
+    return { ok: false, reason: 'not_found', message: 'Aucun engagement trouvé.' }
   }
 
   const contractResult = await createDraftContractForEngagement(engagementId)
@@ -535,7 +614,7 @@ async function signContractInternal(
   const contract = contractResult.contract
 
   if (contract.status === 'cancelled') {
-    return { ok: false, reason: 'invalid_status', message: 'Ce contrat est annule.' }
+    return { ok: false, reason: 'invalid_status', message: 'Ce contrat est annulé.' }
   }
 
   if (contract.status === 'signed') {
@@ -550,6 +629,9 @@ async function signContractInternal(
   }
 
   const nowIso = new Date().toISOString()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   const nextPatronSignedAt = actor === 'patron' ? nowIso : contract.patron_signed_at
   const nextWorkerSignedAt = actor === 'worker' ? nowIso : contract.worker_signed_at
   let nextStatus: ContractStatus = 'draft'
@@ -563,32 +645,38 @@ async function signContractInternal(
     patron_signed_at: nextPatronSignedAt,
     worker_signed_at: nextWorkerSignedAt,
   }
+  if (actor === 'patron') {
+    patch.patron_signed_by_user_id = user?.id ?? engagement.patron_id
+    patch.patron_sign_role = 'patron'
+  }
+  if (actor === 'worker') {
+    patch.worker_signed_by_user_id = user?.id ?? engagement.serveur_id
+    patch.worker_sign_role = 'worker'
+  }
 
   try {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('contracts')
       .update(patch)
       .eq('id', contract.id)
-      .select(CONTRACT_COMPAT_SELECT)
-      .single()
 
     if (error) {
       if (isMissingContractsSchemaError(error)) {
-        return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit etre creee avant de signer.' }
+        return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit être créée avant de signer.' }
       }
       return { ok: false, reason: 'update_failed', message: "Impossible d'enregistrer cette signature." }
     }
 
-    const updatedContract = normalizeContractRecord(data as RawContractRecord)
+    const updatedContract = await getContractForEngagement(engagement.id)
     if (!updatedContract) {
-      return { ok: false, reason: 'update_failed', message: 'La signature a ete enregistree mais la lecture du contrat a echoue.' }
+      return { ok: false, reason: 'update_failed', message: 'La signature a été enregistrée mais la lecture du contrat a échoué.' }
     }
 
     await syncLegacyContractState({ contract: updatedContract, engagement })
     return { ok: true, contract: updatedContract, changed: true }
   } catch (error) {
     if (isMissingContractsSchemaError(error)) {
-      return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit etre creee avant de signer.' }
+      return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit être créée avant de signer.' }
     }
     return { ok: false, reason: 'update_failed', message: "Impossible d'enregistrer cette signature." }
   }
@@ -608,12 +696,12 @@ export async function cancelContract(
 ): Promise<ContractActionResult> {
   const engagement = await fetchEngagementById(engagementId)
   if (!engagement) {
-    return { ok: false, reason: 'not_found', message: 'Aucun engagement trouve.' }
+    return { ok: false, reason: 'not_found', message: 'Aucun engagement trouvé.' }
   }
 
   const contract = await getContractForEngagement(engagementId)
   if (!contract) {
-    return { ok: false, reason: 'not_found', message: 'Aucun contrat trouve.' }
+    return { ok: false, reason: 'not_found', message: 'Aucun contrat trouvé.' }
   }
 
   if (contract.status === 'cancelled') {
@@ -621,26 +709,24 @@ export async function cancelContract(
   }
 
   try {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('contracts')
       .update({
         status: 'cancelled',
         cancelled_at: new Date().toISOString(),
       })
       .eq('id', contract.id)
-      .select(CONTRACT_COMPAT_SELECT)
-      .single()
 
     if (error) {
       if (isMissingContractsSchemaError(error)) {
-        return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit etre creee avant toute annulation.' }
+        return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit être créée avant toute annulation.' }
       }
       return { ok: false, reason: 'update_failed', message: "Impossible d'annuler ce contrat." }
     }
 
-    const updatedContract = normalizeContractRecord(data as RawContractRecord)
+    const updatedContract = await getContractForEngagement(engagement.id)
     if (!updatedContract) {
-      return { ok: false, reason: 'update_failed', message: 'Le contrat a ete annule mais sa lecture a echoue.' }
+      return { ok: false, reason: 'update_failed', message: 'Le contrat a été annulé mais sa lecture a échoué.' }
     }
 
     await supabase
@@ -668,7 +754,7 @@ export async function cancelContract(
     return { ok: true, contract: updatedContract, changed: true }
   } catch (error) {
     if (isMissingContractsSchemaError(error)) {
-      return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit etre creee avant toute annulation.' }
+        return { ok: false, reason: 'schema_unavailable', message: 'La table contracts doit être créée avant toute annulation.' }
     }
     return { ok: false, reason: 'update_failed', message: "Impossible d'annuler ce contrat." }
   }
@@ -684,19 +770,19 @@ export function getContractWarnings(
   const status = normalizeContractStatus(contract.status)
 
   if (!contract.payload_snapshot) {
-    warnings.push('Contrat sans snapshot metier')
+    warnings.push('Contrat sans snapshot métier')
   }
 
   if ((status === 'pending_patron_signature' || status === 'pending_worker_signature' || status === 'signed') && !contract.generated_at) {
-    warnings.push('Contrat sans date de generation')
+    warnings.push('Contrat sans date de génération')
   }
 
   if (status === 'signed' && (!contract.patron_signed_at || !contract.worker_signed_at)) {
-    warnings.push('Contrat signe sans les deux horodatages de signature')
+    warnings.push('Contrat signé sans les deux horodatages de signature')
   }
 
   if (status === 'cancelled' && engagement && normalizeEngagementStatus(engagement.status) !== 'cancelled') {
-    warnings.push('Contrat annule alors que l engagement reste actif')
+    warnings.push('Contrat annulé alors que l’engagement reste actif')
   }
 
   return warnings

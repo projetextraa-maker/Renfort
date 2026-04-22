@@ -26,6 +26,10 @@ export type RawAnnonceRecord = {
   payment_status?: string | null
   check_in_status?: string | null
   dpae_done?: boolean | null
+  dpae_status?: string | null
+  dpae_done_at?: string | null
+  dpae_done_by?: string | null
+  dpae_payload_snapshot?: Record<string, unknown> | null
   checked_in_at?: string | null
   checked_out_at?: string | null
   created_at?: string | null
@@ -57,6 +61,10 @@ export type NormalizedAnnonceRecord = {
   payment_status: string | null
   check_in_status: string | null
   dpae_done: boolean | null
+  dpae_status: string | null
+  dpae_done_at: string | null
+  dpae_done_by: string | null
+  dpae_payload_snapshot: Record<string, unknown> | null
   checked_in_at: string | null
   checked_out_at: string | null
   created_at: string | null
@@ -91,6 +99,11 @@ export const ANNONCE_WORKFLOW_SELECT = `
   contract_status,
   payment_status,
   check_in_status,
+  dpae_done,
+  dpae_status,
+  dpae_done_at,
+  dpae_done_by,
+  dpae_payload_snapshot,
   checked_in_at,
   checked_out_at
 `
@@ -121,6 +134,11 @@ export const ANNONCE_COMPAT_WITH_WORKFLOW_SELECT = `
   contract_status,
   payment_status,
   check_in_status,
+  dpae_done,
+  dpae_status,
+  dpae_done_at,
+  dpae_done_by,
+  dpae_payload_snapshot,
   checked_in_at,
   checked_out_at
 `
@@ -184,6 +202,13 @@ export function normalizeAnnonceRecord(raw: RawAnnonceRecord): NormalizedAnnonce
     payment_status: raw.payment_status ?? null,
     check_in_status: raw.check_in_status ?? null,
     dpae_done: typeof raw.dpae_done === 'boolean' ? raw.dpae_done : null,
+    dpae_status: raw.dpae_status ?? null,
+    dpae_done_at: raw.dpae_done_at ?? null,
+    dpae_done_by: raw.dpae_done_by ?? null,
+    dpae_payload_snapshot:
+      raw.dpae_payload_snapshot && typeof raw.dpae_payload_snapshot === 'object'
+        ? raw.dpae_payload_snapshot
+        : null,
     checked_in_at: raw.checked_in_at ?? null,
     checked_out_at: raw.checked_out_at ?? null,
     created_at: raw.created_at ?? null,

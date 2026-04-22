@@ -19,6 +19,13 @@ export type EvaluationRecente = {
   mission_date?: string
 }
 
+export type MissionEvaluationStatus = {
+  status: 'pending' | 'rated'
+  note: number | null
+  evaluationId: string | null
+  createdAt: string | null
+}
+
 function buildAvisKey(item: { mission_id?: string | null; patron_id?: string | null; id?: string | null }): string {
   return `${item.mission_id ?? item.id ?? 'unknown'}::${item.patron_id ?? 'unknown'}`
 }
@@ -193,4 +200,51 @@ export async function fetchRecentEvaluations(
     mission_poste: missionMap[item.mission_id]?.poste,
     mission_date: missionMap[item.mission_id]?.date,
   }))
+}
+
+export async function fetchPatronMissionEvaluationMap(
+  patronId: string,
+  missionIds: string[]
+): Promise<Record<string, MissionEvaluationStatus>> {
+  const uniqueMissionIds = [...new Set(missionIds.filter(Boolean))]
+  if (!patronId || uniqueMissionIds.length === 0) return {}
+
+  const { data, error } = await supabase
+    .from('avis')
+    .select('id, mission_id, patron_id, note, created_at')
+    .eq('patron_id', patronId)
+    .in('mission_id', uniqueMissionIds)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.log('fetchPatronMissionEvaluationMap error', error)
+    return {}
+  }
+
+  const latestByMission = new Map<string, any>()
+  ;(data ?? []).forEach((item: any) => {
+    const missionId = String(item.mission_id ?? '')
+    if (!missionId || latestByMission.has(missionId)) return
+    latestByMission.set(missionId, item)
+  })
+
+  const map: Record<string, MissionEvaluationStatus> = {}
+  uniqueMissionIds.forEach((missionId) => {
+    const existing = latestByMission.get(missionId)
+    map[missionId] = existing
+      ? {
+          status: 'rated',
+          note: Number.isFinite(Number(existing.note)) ? Number(existing.note) : null,
+          evaluationId: existing.id ? String(existing.id) : null,
+          createdAt: existing.created_at ?? null,
+        }
+      : {
+          status: 'pending',
+          note: null,
+          evaluationId: null,
+          createdAt: null,
+        }
+  })
+
+  return map
 }

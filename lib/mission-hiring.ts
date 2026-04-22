@@ -65,7 +65,7 @@ export function getWorkerInterestLabel(snapshot: MissionApplicationSnapshot): st
     if (status === 'pending') return 'Mission proposee'
   } else {
     if (status === 'selected') return 'Profil retenu'
-    if (status === 'pending') return 'Interet envoye'
+    if (status === 'pending') return 'Intérêt envoyé'
   }
 
   if (status === 'declined') return 'Refuse'
@@ -80,7 +80,7 @@ export function getPatronApplicationLabel(snapshot: MissionApplicationSnapshot):
   if (status === 'declined') return 'Profil refuse'
   if (status === 'expired') return 'Profil expire'
   if (status === 'cancelled') return 'Mission annulee'
-  return 'Interet a traiter'
+  return 'Intérêt à traiter'
 }
 
 export function isWorkerEligibleForMatching(worker: WorkerMatchingSnapshot): boolean {
@@ -90,9 +90,7 @@ export function isWorkerEligibleForMatching(worker: WorkerMatchingSnapshot): boo
   const hasCoreProfile = Boolean(
     worker.prenom &&
     worker.nom &&
-    worker.ville &&
-    worker.lat != null &&
-    worker.lng != null
+    worker.ville
   )
 
   const explicitProfileComplete = worker.profil_complet ?? worker.profile_complete ?? worker.is_profile_complete

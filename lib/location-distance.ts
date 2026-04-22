@@ -1,5 +1,15 @@
 export const DISTANCE_FILTERS_KM = [10, 20, 50] as const
 
+export function hasValidCoordinates(
+  lat: number | null | undefined,
+  lng: number | null | undefined
+): boolean {
+  if (lat == null || lng == null) return false
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false
+  if (lat === 0 && lng === 0) return false
+  return true
+}
+
 export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const earthRadiusKm = 6371
   const dLat = ((lat2 - lat1) * Math.PI) / 180
