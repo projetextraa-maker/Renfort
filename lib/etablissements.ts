@@ -40,7 +40,6 @@ type CanonicalEtablissementRow = {
 
 type LegacyEtablissementRow = {
   id: string
-  patron_id: string | null
   name: string | null
   address: string | null
   city: string | null
@@ -108,7 +107,7 @@ function normalizeLegacyRow(row: LegacyEtablissementRow, userId: string): Etabli
 
   return {
     id: row.id,
-    user_id: row.patron_id ?? userId,
+    user_id: userId,
     nom,
     adresse: row.address ?? null,
     ville,
@@ -169,8 +168,8 @@ export async function fetchEtablissementsForPatron(userId: string): Promise<Etab
 
   const { data: legacyData } = await supabase
     .from('etablissements')
-    .select('id, patron_id, name, address, city, lat, lng, is_primary, created_at, last_used_at')
-    .eq('patron_id', userId)
+    .select('id, user_id, name, address, city, lat, lng, is_primary, created_at, updated_at, last_used_at')
+    .eq('user_id', userId)
 
   ;(legacyData ?? []).forEach((row: any) => {
     const normalized = normalizeLegacyRow(row as LegacyEtablissementRow, userId)
@@ -276,7 +275,7 @@ export async function fetchEtablissementById(id: string): Promise<Etablissement 
 
   const { data: legacyData } = await supabase
     .from('etablissements')
-    .select('id, patron_id, name, address, city, lat, lng, is_primary, created_at, updated_at, last_used_at')
+    .select('id, user_id, name, address, city, lat, lng, is_primary, created_at, updated_at, last_used_at')
     .eq('id', id)
     .maybeSingle()
 
@@ -284,6 +283,6 @@ export async function fetchEtablissementById(id: string): Promise<Etablissement 
 
   return normalizeLegacyRow(
     legacyData as LegacyEtablissementRow,
-    String((legacyData as LegacyEtablissementRow).patron_id ?? '')
+    String((legacyData as any).user_id ?? '')
   )
 }
