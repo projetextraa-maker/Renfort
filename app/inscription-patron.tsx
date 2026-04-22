@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { ensureAccountProfileForUser } from '../lib/auth-profile-sync'
 import { getHomeRouteForRole, getLoginRouteForRole } from '../lib/auth-role'
 import { searchFrenchCities, type FrenchCityOption } from '../lib/french-postal'
@@ -27,6 +27,8 @@ export default function InscriptionPatron() {
   const [email, setEmail] = useState('')
   const [telephone, setTelephone] = useState('')
   const [emailError, setEmailError] = useState('')
+  const [cityError, setCityError] = useState('')
+  const [submitError, setSubmitError] = useState('')
   const [locationQuery, setLocationQuery] = useState('')
   const [postalCode, setPostalCode] = useState('')
   const [ville, setVille] = useState('')
@@ -37,6 +39,7 @@ export default function InscriptionPatron() {
   const [loading, setLoading] = useState(false)
 
   const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+  const normalizeCityQuery = (value: string) => value.trim().toLowerCase()
 
   const handleResetPassword = async () => {
     if (!email.trim()) {
@@ -72,6 +75,18 @@ export default function InscriptionPatron() {
       setCityOptions(nextCities)
       setCitiesLoading(false)
 
+      const exactMatches = nextCities.filter((city) => {
+        const formatted = `${city.nom} (${city.codePostal})`
+        return normalizeCityQuery(city.nom) === normalizeCityQuery(normalizedQuery)
+          || normalizeCityQuery(formatted) === normalizeCityQuery(normalizedQuery)
+          || city.codePostal === normalizedQuery
+      })
+
+      if (exactMatches.length === 1) {
+        handleSelectCity(exactMatches[0])
+        return
+      }
+
       if (!nextCities.some((item) => item.nom === selectedCity?.nom && item.codePostal === selectedCity?.codePostal)) {
         setSelectedCity(null)
         setVille('')
@@ -87,6 +102,8 @@ export default function InscriptionPatron() {
   }, [locationQuery, selectedCity?.codePostal, selectedCity?.nom])
 
   const handleSelectCity = (city: FrenchCityOption) => {
+    setSubmitError('')
+    setCityError('')
     setSelectedCity(city)
     setVille(city.nom)
     setPostalCode(city.codePostal)
@@ -94,17 +111,44 @@ export default function InscriptionPatron() {
   }
 
   const handleInscription = async () => {
-    if (!nomRestaurant || !prenom || !email || !telephone || !postalCode || !ville || !motDePasse || !selectedCity) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs')
+    console.log('[signup:patron] click')
+    console.log('[signup:patron] validation start')
+    if (!nomRestaurant || !prenom || !email || !telephone || !motDePasse) {
+      console.warn('[signup:patron] validation failed', {
+        reason: 'missing_required_fields',
+        hasNomRestaurant: Boolean(nomRestaurant),
+        hasPrenom: Boolean(prenom),
+        hasEmail: Boolean(email),
+        hasTelephone: Boolean(telephone),
+        hasPassword: Boolean(motDePasse),
+      })
+      setCityError('')
+      setSubmitError('Veuillez remplir tous les champs obligatoires avant de continuer.')
+      return
+    }
+
+    if (!selectedCity) {
+      console.warn('[signup:patron] validation failed', {
+        reason: 'city_not_selected',
+        locationQuery,
+        cityOptionsCount: cityOptions.length,
+      })
+      setCityError('Veuillez s?lectionner une ville dans la liste')
+      setSubmitError('Veuillez s?lectionner une ville dans la liste avant de continuer.')
       return
     }
 
     if (!isValidEmail(email)) {
+      console.warn('[signup:patron] validation failed', { reason: 'invalid_email', email })
       setEmailError('Veuillez entrer une adresse email valide')
+      setSubmitError('Veuillez corriger votre adresse email avant de continuer.')
       return
     }
 
+    setCityError('')
+    setSubmitError('')
     setLoading(true)
+    console.log('[signup:patron] signup start', { email })
 
     const { data, error: authError } = await supabase.auth.signUp({
       email,
@@ -124,10 +168,12 @@ export default function InscriptionPatron() {
     })
 
     if (authError) {
+      console.log('[signup:patron] signup result', { ok: false, message: authError.message, status: authError.status ?? null })
       console.error('inscription patron auth.signUp error', authError)
       setLoading(false)
       const lower = String(authError.message ?? '').toLowerCase()
       if (lower.includes('user already registered') || lower.includes('already registered')) {
+        setSubmitError('Un compte existe déjà avec cet email. Connectez-vous.')
         Alert.alert(
           'Compte existant',
           'Un compte existe déjà avec cet email. Connectez-vous.',
@@ -140,15 +186,26 @@ export default function InscriptionPatron() {
         return
       }
 
+      setSubmitError(getFriendlySignupError(authError))
       Alert.alert('Erreur', getFriendlySignupError(authError))
       return
     }
 
+    console.log('[signup:patron] signup result', {
+      ok: true,
+      hasUser: Boolean(data.user),
+      hasSession: Boolean(data.session),
+      userId: data.user?.id ?? null,
+    })
+
     if (data.user && data.session) {
+      console.log('[signup:patron] profile sync start', { userId: data.user.id })
       const profileSync = await ensureAccountProfileForUser(data.user)
+      console.log('[signup:patron] profile sync result', profileSync)
       if (!profileSync.ok) {
         console.error('inscription patron profile sync error', profileSync)
         setLoading(false)
+        setSubmitError("Le compte a été créé, mais le profil patron n'a pas pu être initialisé.")
         Alert.alert('Erreur', "Le compte a été créé, mais le profil patron n'a pas pu être initialisé.")
         return
       }
@@ -156,6 +213,7 @@ export default function InscriptionPatron() {
 
     setLoading(false)
     const hasSession = Boolean(data.session)
+    console.log('[signup:patron] navigation start', { hasSession })
     Alert.alert(
       hasSession ? 'Compte créé' : 'Confirmez votre email',
       hasSession
@@ -190,10 +248,10 @@ export default function InscriptionPatron() {
 
         <View style={styles.card}>
           <Text style={styles.label}>Nom du restaurant</Text>
-          <TextInput style={styles.input} placeholder="Ex : Brasserie du Vieux Port" placeholderTextColor="#9A9388" value={nomRestaurant} onChangeText={setNomRestaurant} />
+          <TextInput style={styles.input} placeholder="Ex : Brasserie du Vieux Port" placeholderTextColor="#9A9388" value={nomRestaurant} onChangeText={(value) => { setNomRestaurant(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Votre prénom</Text>
-          <TextInput style={styles.input} placeholder="Ex : Jean" placeholderTextColor="#9A9388" value={prenom} onChangeText={setPrenom} />
+          <TextInput style={styles.input} placeholder="Ex : Jean" placeholderTextColor="#9A9388" value={prenom} onChangeText={(value) => { setPrenom(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Email</Text>
           <TextInput
@@ -206,16 +264,17 @@ export default function InscriptionPatron() {
             onChangeText={(value) => {
               setEmail(value)
               if (!value.trim() || isValidEmail(value)) setEmailError('')
+              if (submitError) setSubmitError('')
             }}
           />
           {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
           <Text style={styles.label}>Téléphone</Text>
-          <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={setTelephone} />
+          <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={(value) => { setTelephone(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Ville ou code postal</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, cityError ? styles.inputError : null]}
             placeholder="Ex : 13600 ou La Ciotat"
             placeholderTextColor="#9A9388"
             autoCapitalize="words"
@@ -225,8 +284,11 @@ export default function InscriptionPatron() {
               setSelectedCity(null)
               setVille('')
               setPostalCode('')
+              if (cityError) setCityError('')
+              if (submitError) setSubmitError('')
             }}
           />
+          {cityError ? <Text style={styles.fieldError}>{cityError}</Text> : null}
 
           {locationQuery.trim().length >= 2 && (
             <View style={styles.cityOptionsWrap}>
@@ -255,11 +317,21 @@ export default function InscriptionPatron() {
           )}
 
           <Text style={styles.label}>Mot de passe</Text>
-          <TextInput style={styles.input} placeholder="Minimum 6 caractères" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={setMotDePasse} />
+          <TextInput style={styles.input} placeholder="Minimum 6 caractères" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
 
-          <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleInscription} disabled={loading} activeOpacity={0.88}>
+          {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
+
+          <Pressable
+            style={({ pressed }) => [styles.button, (loading || !selectedCity) && styles.buttonDisabled, pressed && !loading && selectedCity ? styles.buttonPressed : null]}
+            onPressIn={() => console.log('CLICK SIGNUP', { role: 'patron', loading, hasSelectedCity: Boolean(selectedCity) })}
+            onPress={() => {
+              console.log('[signup:patron] button pressed')
+              void handleInscription()
+            }}
+            disabled={loading || !selectedCity}
+          >
             <Text style={styles.buttonText}>{loading ? 'Création en cours...' : 'Créer mon compte'}</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         <TouchableOpacity style={styles.loginLink} onPress={() => router.push('/connexion-patron')}>
@@ -312,6 +384,14 @@ const styles = StyleSheet.create({
     marginTop: -10,
     marginBottom: 14,
   },
+  submitError: {
+    fontSize: 13,
+    color: '#C84B4B',
+    fontWeight: '600',
+    lineHeight: 18,
+    marginTop: -4,
+    marginBottom: 12,
+  },
   cityOptionsWrap: { marginTop: -8, marginBottom: 18, gap: 8 },
   cityHelper: { fontSize: 13, color: C.muted, lineHeight: 18 },
   cityOption: {
@@ -338,6 +418,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   buttonDisabled: { opacity: 0.7 },
+  buttonPressed: { transform: [{ scale: 0.985 }] },
   buttonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
   loginLink: { alignItems: 'center', marginTop: 20 },
   loginText: { fontSize: 14, color: C.terra, fontWeight: '700' },
