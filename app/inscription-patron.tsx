@@ -331,7 +331,7 @@ export default function InscriptionPatron() {
           <Text style={styles.label}>Nom du restaurant</Text>
           <TextInput style={styles.input} placeholder="Ex : Brasserie du Vieux Port" placeholderTextColor="#9A9388" value={nomRestaurant} onChangeText={(value) => { setNomRestaurant(value); if (submitError) setSubmitError('') }} />
 
-          <Text style={styles.label}>Votre prÃ©nom</Text>
+          <Text style={styles.label}>Votre prénom</Text>
           <TextInput style={styles.input} placeholder="Ex : Jean" placeholderTextColor="#9A9388" value={prenom} onChangeText={(value) => { setPrenom(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Email</Text>
@@ -350,7 +350,7 @@ export default function InscriptionPatron() {
           />
           {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
-          <Text style={styles.label}>TÃ©lÃ©phone</Text>
+          <Text style={styles.label}>Téléphone</Text>
           <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={(value) => { setTelephone(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Ville ou code postal</Text>
@@ -376,7 +376,7 @@ export default function InscriptionPatron() {
               {citiesLoading ? (
                 <Text style={styles.cityHelper}>Recherche des suggestions...</Text>
               ) : cityOptions.length === 0 ? (
-                <Text style={styles.cityHelper}>Aucune ville trouvÃ©e</Text>
+                <Text style={styles.cityHelper}>Aucune ville trouvée</Text>
               ) : (
                 cityOptions.map((city) => {
                   const isSelected = selectedCity?.nom === city.nom && selectedCity?.codePostal === city.codePostal
@@ -398,7 +398,7 @@ export default function InscriptionPatron() {
           )}
 
           <Text style={styles.label}>Mot de passe</Text>
-          <TextInput style={styles.input} placeholder="Minimum 6 caractÃ¨res" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
+          <TextInput style={styles.input} placeholder="Minimum 6 caractères" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
 
           {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
           {submitSuccess ? <Text style={styles.submitSuccess}>{submitSuccess}</Text> : null}
@@ -513,6 +513,7 @@ const styles = StyleSheet.create({
   loginLink: { alignItems: 'center', marginTop: 20 },
   loginText: { fontSize: 14, color: C.terra, fontWeight: '700' },
 })
+
 
 
 
