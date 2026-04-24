@@ -10,19 +10,19 @@ import {
 } from '../../lib/profile-photo'
 import { formatServeurExperience, type ServeurExperience } from '../../lib/serveur-experiences'
 import { fetchServeurExperiences } from '../../lib/serveur-experiences-api'
-import { computeServeurMissionStatsFromAnnonces } from '../../lib/serveur-stats'
+import { computeServeurMissionStatsFromAnnonces, getServeurExperienceBadgeLabel } from '../../lib/serveur-stats'
 import { supabase } from '../../lib/supabase'
 
 const C = {
-  bg: '#F7F4EE',
-  card: '#FFFFFF',
-  cardSoft: '#F4EFE7',
-  border: '#E6DED2',
+  bg: '#F6F1E8',
+  card: '#FFFCF8',
+  cardSoft: '#F8F2E8',
+  border: '#E8DED0',
   borderSoft: '#EFE7DB',
-  title: '#171614',
-  textSoft: '#6D675E',
-  textMuted: '#9A9388',
-  accent: '#2E8B57',
+  title: '#1A1612',
+  textSoft: '#6A6157',
+  textMuted: '#9C9287',
+  accent: '#1F6B45',
   terra: '#C46A3C',
   amber: '#B8893C',
   red: '#C84B4B',
@@ -153,6 +153,24 @@ export default function ProfilServeurScreen() {
     totalPresence > 0
       ? Math.min(100, Math.round((serveur.missions_realisees / totalPresence) * 100))
       : 100
+  const completedMissions = serveur?.missions_realisees ?? 0
+  const currentBadge = getServeurExperienceBadgeLabel(completedMissions)
+  const badgeLevels = [
+    { label: 'Nouveau', missions: '0 a 3 missions confirmees', gain: '0€/h' },
+    { label: 'Confirme', missions: '3 a 20 missions confirmees', gain: '+1€/h' },
+    { label: 'Pro', missions: '20 a 50 missions confirmees', gain: '+2€/h' },
+    { label: 'Expert', missions: 'Plus de 50 missions confirmees', gain: '+3€/h' },
+  ]
+
+  const nextBadge =
+    completedMissions < 3
+      ? { label: 'Confirme', threshold: 3, gain: '+1€/h' }
+      : completedMissions < 20
+        ? { label: 'Pro', threshold: 20, gain: '+2€/h' }
+        : completedMissions < 50
+          ? { label: 'Expert', threshold: 50, gain: '+3€/h' }
+          : null
+  const missionsToNextBadge = nextBadge ? Math.max(0, nextBadge.threshold - completedMissions) : 0
 
   return (
     <ScrollView style={s.screen} contentContainerStyle={s.content}>
@@ -178,14 +196,14 @@ export default function ProfilServeurScreen() {
               <View style={s.photoOverlay}>
                 <Text style={s.photoOverlayTxt}>{photoLoading ? '...' : '\u270e'}</Text>
               </View>
-              <Text style={s.photoHint}>{photoLoading ? 'Mise \u00e0 jour...' : ''}</Text>
+              <Text style={s.photoHint}>{photoLoading ? 'Mise à jour...' : ''}</Text>
             </TouchableOpacity>
 
             <View style={s.heroInfo}>
               <Text style={s.nom}>
                 {serveur?.prenom} {serveur?.nom}
               </Text>
-              <Text style={s.ville}>{'\u{1F4CD}'} {serveur?.ville || 'Ville non renseign\u00e9e'}</Text>
+              <Text style={s.ville}>{'\u{1F4CD}'} {serveur?.ville || 'Ville non renseignée'}</Text>
 
               <View style={s.profileBadge}>
                 <View style={s.profileBadgeDot} />
@@ -196,18 +214,81 @@ export default function ProfilServeurScreen() {
 
           <View style={s.summaryGrid}>
             <View style={[s.summaryCard, s.summaryCardPrimary]}>
-              <Text style={s.summaryEyebrow}>Activit\u00e9</Text>
+              <Text style={s.summaryEyebrow}>ACTIVITÉ</Text>
               <Text style={[s.summaryValue, { color: C.accent }]}>{serveur?.missions_realisees || 0}</Text>
-              <Text style={s.summaryLabel}>missions r\u00e9alis\u00e9es</Text>
+              <Text style={s.summaryLabel}>missions réalisées</Text>
             </View>
             <View style={[s.summaryCard, s.summaryCardSecondary]}>
-              <Text style={s.summaryEyebrow}>{serveur?.score ? 'Note' : 'Pr\u00e9sence'}</Text>
+              <Text style={s.summaryEyebrow}>{serveur?.score ? 'NOTE' : 'PRÉSENCE'}</Text>
               <Text style={s.summaryValueAlt}>
                 {serveur?.score ? Number(serveur.score).toFixed(1) : `${tauxPresence}%`}
               </Text>
-              <Text style={s.summaryLabelStrong}>{serveur?.score ? 'moyenne' : 'taux de pr\u00e9sence'}</Text>
+              <Text style={s.summaryLabelStrong}>{serveur?.score ? 'moyenne' : 'taux de présence'}</Text>
             </View>
           </View>
+        </View>
+      </View>
+
+      <View style={s.card}>
+        <Text style={s.sectionOverline}>AVANTAGES</Text>
+        <Text style={s.cardTitle}>Badges et avantages</Text>
+        <Text style={s.badgesIntro}>Votre badge actuel : {currentBadge}</Text>
+
+        <View style={s.badgeGrid}>
+          {badgeLevels.map((item) => {
+            const isActive =
+              currentBadge === item.label ||
+              (currentBadge === 'Confirmé' && item.label === 'Confirme')
+
+            return (
+              <View key={`grid-${item.label}`} style={[s.badgeCard, isActive && s.badgeCardActive, !isActive && nextBadge?.label === item.label && s.badgeCardNext]}>
+                <Text style={[s.badgeCardTitle, isActive && s.badgeCardTitleActive]}>{item.label}</Text>
+                <Text style={[s.badgeCardMeta, isActive && s.badgeCardMetaActive]}>
+                  {item.missions.replace(' confirmees', '').replace('Plus de ', '').replace(' a ', '–')}
+                </Text>
+                <Text style={s.badgeCardSubmeta}>confirmées</Text>
+                <Text style={[s.badgeCardGain, isActive && s.badgeCardGainActive]}>{item.gain}</Text>
+              </View>
+            )
+          })}
+        </View>
+
+        {nextBadge ? (
+          <Text style={s.badgeProgressText}>
+            Encore {missionsToNextBadge} mission{missionsToNextBadge > 1 ? 's' : ''} pour passer {nextBadge.label} ({nextBadge.gain})
+          </Text>
+        ) : null}
+
+        <View style={s.conditionsCompactBox}>
+          <Text style={s.conditionsTitle}>Conditions :</Text>
+          <Text style={s.conditionsText}>• ≥90% présence</Text>
+          <Text style={s.conditionsText}>• Note ≥ 4</Text>
+        </View>
+
+        <View style={s.progressTrack}>
+          {[
+            { label: 'Nouveau', gain: '0€/h' },
+            { label: 'Confirmé', gain: '+1€/h' },
+            { label: 'Pro', gain: '+2€/h' },
+            { label: 'Expert', gain: '+3€/h' },
+          ].map((item, index, array) => (
+            <View key={item.label} style={s.progressStepWrap}>
+              {index > 0 ? <View style={s.progressLine} /> : null}
+              <View style={[s.progressStep, currentBadge === item.label && s.progressStepActive]}>
+                <Text style={[s.progressStepLabel, currentBadge === item.label && s.progressStepLabelActive]}>
+                  {item.label}
+                </Text>
+                <Text style={[s.progressStepGain, currentBadge === item.label && s.progressStepGainActive]}>
+                  {item.gain}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={s.conditionsBox}>
+          <Text style={s.conditionsText}>Présence ≥ 90% sur les 10 dernières missions</Text>
+          <Text style={s.conditionsText}>Note ≥ 4 pour débloquer la négociation</Text>
         </View>
       </View>
 
@@ -254,9 +335,6 @@ export default function ProfilServeurScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity style={s.referralCard} activeOpacity={0.82} onPress={() => router.push('/parrainage')}>
-        <View style={s.referralIcon}>
-          <Text style={s.referralIconText}>%</Text>
-        </View>
         <View style={{ flex: 1 }}>
           <Text style={s.referralTitle}>Parrainage</Text>
           <Text style={s.referralSub}>Invitez un proche et profitez d’avantages.</Text>
@@ -273,93 +351,131 @@ export default function ProfilServeurScreen() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
-  content: { paddingBottom: 128 },
+  content: { paddingBottom: 132 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { paddingTop: 34, paddingHorizontal: 16, paddingBottom: 0 },
+  header: { paddingTop: 36, paddingHorizontal: 16, paddingBottom: 0 },
   heroCard: {
     backgroundColor: C.card,
-    borderRadius: 28,
+    borderRadius: 32,
     borderWidth: 1,
     borderColor: C.border,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 18,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 20,
     shadowColor: '#120E0A',
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 24,
-    elevation: 4,
+    shadowRadius: 20,
+    elevation: 3,
   },
-  heroAccent: { width: 68, height: 6, borderRadius: 999, backgroundColor: '#E8F5ED', borderWidth: 1, borderColor: '#CFE7D8', marginBottom: 18 },
-  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 18, marginBottom: 18 },
+  heroAccent: { width: 72, height: 6, borderRadius: 999, backgroundColor: '#EEF7F1', borderWidth: 1, borderColor: '#D1E2D5', marginBottom: 20 },
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 18, marginBottom: 20 },
   photoTap: {
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   photoFrame: {
-    width: 108,
-    height: 108,
-    borderRadius: 54,
-    backgroundColor: '#F4FBF7',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: '#F7FBF8',
     borderWidth: 1,
-    borderColor: '#CFE7D8',
+    borderColor: '#D9E5DD',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#0F4939',
-    shadowOpacity: 0.12,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 18,
-    elevation: 4,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 3,
   },
   avatar: {
-    width: 98,
-    height: 98,
-    borderRadius: 49,
-    backgroundColor: '#E8F5ED',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#EEF7F1',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: '#CFE7D8',
+    borderColor: '#D6E3DA',
   },
   photo: {
-    width: 98,
-    height: 98,
-    borderRadius: 49,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     borderWidth: 1.5,
-    borderColor: '#CFE7D8',
-    backgroundColor: '#E8F5ED',
+    borderColor: '#D6E3DA',
+    backgroundColor: '#EEF7F1',
   },
   avatarText: { fontSize: 32, fontWeight: '800', color: C.accent },
   photoHint: { display: 'none' },
-  photoOverlay: { position: 'absolute', right: 4, bottom: 4, width: 30, height: 30, borderRadius: 15, backgroundColor: '#171614', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.card },
+  photoOverlay: { position: 'absolute', right: 4, bottom: 4, width: 32, height: 32, borderRadius: 16, backgroundColor: '#171614', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.card },
   photoOverlayTxt: { fontSize: 12, color: '#fff', fontWeight: '800' },
   heroInfo: { flex: 1 },
-  nom: { fontSize: 28, fontWeight: '800', color: C.title, letterSpacing: -0.5, marginBottom: 6 },
+  nom: { fontSize: 29, fontWeight: '800', color: C.title, letterSpacing: -0.7, lineHeight: 33, marginBottom: 6 },
   ville: { fontSize: 13, color: C.textSoft, marginBottom: 12, fontWeight: '600' },
-  profileBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#F0F8F3', borderWidth: 1, borderColor: '#CFE7D8', alignSelf: 'flex-start' },
+  profileBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#EEF7F1', borderWidth: 1, borderColor: '#D1E2D5', alignSelf: 'flex-start' },
   profileBadgeDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
   profileBadgeTxt: { fontSize: 12, color: C.accent, fontWeight: '800' },
   summaryGrid: { flexDirection: 'row', gap: 12, width: '100%' },
-  summaryCard: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 16 },
-  summaryCardPrimary: { backgroundColor: C.cardSoft, borderColor: C.borderSoft },
-  summaryCardSecondary: { backgroundColor: '#F0F8F3', borderColor: '#CFE7D8' },
-  summaryEyebrow: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.1, color: C.textMuted, fontWeight: '700', marginBottom: 10 },
-  summaryValue: { fontSize: 28, fontWeight: '800', color: C.title, marginBottom: 4, letterSpacing: -0.6 },
-  summaryValueAlt: { fontSize: 24, fontWeight: '800', color: C.title, marginBottom: 6, letterSpacing: -0.5 },
+  summaryCard: { flex: 1, borderRadius: 24, borderWidth: 1, paddingHorizontal: 18, paddingVertical: 18, minHeight: 124 },
+  summaryCardPrimary: { backgroundColor: '#FAF6EF', borderColor: '#EEE4D7' },
+  summaryCardSecondary: { backgroundColor: '#F2F8F3', borderColor: '#D6E3DA' },
+  summaryEyebrow: { fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.1, color: C.textMuted, fontWeight: '800', marginBottom: 10 },
+  summaryValue: { fontSize: 30, fontWeight: '800', color: C.title, marginBottom: 4, letterSpacing: -0.8 },
+  summaryValueAlt: { fontSize: 26, fontWeight: '800', color: C.title, marginBottom: 6, letterSpacing: -0.6 },
   summaryLabel: { fontSize: 12, color: C.textSoft, fontWeight: '600', lineHeight: 16 },
   summaryLabelStrong: { fontSize: 13, color: C.accent, fontWeight: '700' },
-  firstCard: { marginTop: 28 },
+  badgesIntro: { fontSize: 14, color: C.title, fontWeight: '700', marginBottom: 14 },
+  badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginBottom: 14 },
+  badgeCard: {
+    width: '48.3%',
+    minHeight: 96,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E8DED0',
+    backgroundColor: '#FAF6EF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'space-between',
+  },
+  badgeCardActive: { backgroundColor: '#EEF7F1', borderColor: '#D1E2D5' },
+  badgeCardNext: { borderColor: '#E3C78D', backgroundColor: '#FCF6EA' },
+  badgeCardTitle: { fontSize: 13, color: C.title, fontWeight: '800' },
+  badgeCardTitleActive: { color: C.accent },
+  badgeCardMeta: { marginTop: 6, fontSize: 11, lineHeight: 15, color: C.textSoft, fontWeight: '700' },
+  badgeCardMetaActive: { color: '#35684E' },
+  badgeCardSubmeta: { marginTop: 1, fontSize: 10, lineHeight: 13, color: C.textMuted, fontWeight: '600' },
+  badgeCardGain: { marginTop: 8, fontSize: 14, color: C.terra, fontWeight: '800' },
+  badgeCardGainActive: { color: C.accent },
+  badgeProgressText: { marginTop: -2, marginBottom: 12, fontSize: 13, lineHeight: 18, color: C.accent, fontWeight: '700' },
+  progressTrack: { display: 'none', flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-between', marginBottom: 14 },
+  progressStepWrap: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  progressLine: { flex: 1, height: 1, backgroundColor: '#DCCFC0', marginHorizontal: 4 },
+  progressStep: { minHeight: 66, minWidth: 68, paddingHorizontal: 8, paddingVertical: 10, borderRadius: 16, borderWidth: 1, borderColor: '#E8DED0', backgroundColor: '#FAF6EF', alignItems: 'center', justifyContent: 'center' },
+  progressStepActive: { backgroundColor: '#EEF7F1', borderColor: '#D1E2D5' },
+  progressStepLabel: { fontSize: 11, color: C.title, fontWeight: '800', textAlign: 'center' },
+  progressStepLabelActive: { color: C.accent },
+  progressStepGain: { marginTop: 6, fontSize: 11, color: C.textSoft, fontWeight: '700', textAlign: 'center' },
+  progressStepGainActive: { color: C.accent },
+  conditionsCompactBox: { backgroundColor: '#F8F2E8', borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 2 },
+  conditionsBox: { display: 'none', backgroundColor: '#F8F2E8', borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
+  conditionsTitle: { fontSize: 12, color: C.title, fontWeight: '800', marginBottom: 4 },
+  conditionsText: { fontSize: 13, color: C.textSoft, lineHeight: 18, fontWeight: '600' },
+  firstCard: { marginTop: 30 },
   card: {
     backgroundColor: C.card,
     margin: 16,
     marginBottom: 0,
-    padding: 16,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    padding: 20,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: C.border,
+    shadowColor: '#120E0A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
     elevation: 2,
   },
   sectionOverline: {
@@ -369,70 +485,71 @@ const s = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 10,
   },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: C.title, marginBottom: 10 },
-  bioText: { fontSize: 14, color: C.textSoft, lineHeight: 21 },
+  cardTitle: { fontSize: 21, fontWeight: '800', color: C.title, marginBottom: 12, letterSpacing: -0.3 },
+  bioText: { fontSize: 14, color: C.textSoft, lineHeight: 22 },
   cardRowHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
   },
-  cardLink: { fontSize: 13, color: C.terra, fontWeight: '700' },
-  expList: { gap: 8 },
+  cardLink: { fontSize: 13, color: C.accent, fontWeight: '800' },
+  expList: { gap: 10 },
   expItem: {
-    backgroundColor: C.cardSoft,
+    backgroundColor: '#FAF6EF',
     borderWidth: 1,
-    borderColor: C.borderSoft,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: '#EEE4D7',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  expTxt: { fontSize: 13, lineHeight: 18, color: C.title, fontWeight: '600' },
-  emptyTxt: { fontSize: 13, color: C.textSoft, lineHeight: 19 },
-  infoTxt: { fontSize: 14, color: C.textSoft, marginBottom: 6 },
+  expTxt: { fontSize: 13, lineHeight: 19, color: C.title, fontWeight: '600' },
+  emptyTxt: { fontSize: 13, color: C.textSoft, lineHeight: 20 },
+  infoTxt: { fontSize: 14, color: C.textSoft, marginBottom: 8, lineHeight: 20 },
   editBtn: {
     margin: 16,
     marginBottom: 0,
-    padding: 15,
-    borderRadius: 14,
+    padding: 16,
+    borderRadius: 18,
     alignItems: 'center',
     backgroundColor: C.accent,
+    shadowColor: C.accent,
+    shadowOpacity: 0.16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 2,
   },
-  editBtnTxt: { fontSize: 15, color: '#fff', fontWeight: '700' },
+  editBtnTxt: { fontSize: 15, color: '#fff', fontWeight: '800' },
   referralCard: {
-    backgroundColor: '#FFF8F1',
+    backgroundColor: '#F2F8F3',
     margin: 16,
     marginBottom: 0,
-    padding: 14,
-    borderRadius: 16,
+    padding: 16,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#E8CBB2',
+    borderColor: '#D6E3DA',
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: '#120E0A',
+    shadowOpacity: 0.03,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 1,
+    justifyContent: 'space-between',
   },
-  referralIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: '#F4E2D4',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  referralIconText: { fontSize: 16, fontWeight: '800', color: C.terra },
-  referralTitle: { fontSize: 15, fontWeight: '700', color: C.title, marginBottom: 3 },
+  referralTitle: { fontSize: 16, fontWeight: '800', color: C.title, marginBottom: 3 },
   referralSub: { fontSize: 12, color: C.textSoft },
-  referralArrow: { fontSize: 22, color: C.terra, marginLeft: 8, fontWeight: '800' },
+  referralArrow: { fontSize: 22, color: C.accent, marginLeft: 8, fontWeight: '800' },
   logoutBtn: {
     margin: 16,
     marginTop: 12,
-    padding: 15,
-    borderRadius: 14,
+    padding: 16,
+    borderRadius: 18,
     alignItems: 'center',
     backgroundColor: C.card,
     borderWidth: 1.5,
     borderColor: C.red,
     marginBottom: 8,
   },
-  logoutTxt: { fontSize: 15, color: C.red, fontWeight: '600' },
+  logoutTxt: { fontSize: 15, color: C.red, fontWeight: '700' },
 })

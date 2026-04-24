@@ -30,7 +30,7 @@ import {
 } from '../lib/serveur-experiences'
 import { fetchServeurExperiences } from '../lib/serveur-experiences-api'
 import { getPresenceBadge, getPresenceRate } from '../lib/serveur-presence'
-import { computeServeurMissionStatsFromAnnonces } from '../lib/serveur-stats'
+import { computeServeurMissionStatsFromAnnonces, getServeurExperienceBadgeLabel } from '../lib/serveur-stats'
 import { getServerBusySlotMessage } from '../lib/server-availability'
 import { supabase } from '../lib/supabase'
 
@@ -385,7 +385,7 @@ export default function ProfilServeurPublic() {
       <View style={s.loadWrap}>
         <Text style={s.errorTxt}>{loadError ?? 'Profil introuvable'}</Text>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={s.backLink}>← Retour</Text>
+          <Text style={s.backLink}>Retour</Text>
         </TouchableOpacity>
       </View>
     )
@@ -394,7 +394,7 @@ export default function ProfilServeurPublic() {
   const initials = initialesAvatar(serveur.prenom, serveur.nom)
   const missions = toSafeNumber(serveur.missions_realisees)
   const noShowCount = toSafeNumber(serveur.missions_annulees)
-  const niveau = niveauLabel(missions)
+  const experienceBadge = getServeurExperienceBadgeLabel(missions)
   const primaryExperienceLabel = getPrimaryServeurExperienceLabel(experiences)
   const description = descriptionCourte(serveur)
   const bioFull = bioLongue(serveur, experiences)
@@ -402,32 +402,42 @@ export default function ProfilServeurPublic() {
   const distanceLabel = distanceKm != null ? `${distanceKm} km` : `${serveur.rayon} km`
   const distanceMetricLabel = distanceKm != null ? 'Distance' : 'Rayon'
   const presenceBadge = getPresenceBadge(serveur.missions_realisees, serveur.missions_annulees)
-  const presenceSummary = formatPresenceSummary(missions, noShowCount)
   const presenceRateValue = missions > 0 ? `${getPresenceRate(missions, noShowCount)}%` : 'Nouveau'
   const experienceValue = formatMissionCount(missions)
   const noteValue = noteAff ?? 'Pas encore noté'
 
+  const experienceBadgeStyle = (() => {
+    switch (experienceBadge) {
+      case 'Expert':
+        return { bg: '#FFF4E8', bd: '#F1D3A6', txt: '#B66A1E' }
+      case 'Pro':
+        return { bg: '#F5EEFF', bd: '#D8C4F3', txt: '#7651B4' }
+      case 'Confirmé':
+        return { bg: '#EEF4FF', bd: '#C8D8F4', txt: '#456FB3' }
+      case 'Nouveau':
+      default:
+        return { bg: '#F4F2EE', bd: '#DED7CD', txt: '#5E5A55' }
+    }
+  })()
   const presenceBadgeStyle = (() => {
     switch (presenceBadge.tone) {
       case 'very_reliable':
-        return { bg: C.greenBg, bd: C.greenBd, txt: C.greenDark }
+        return { bg: '#EAF6EF', bd: '#B9D9C5', txt: C.greenDark }
       case 'reliable':
-        return { bg: C.oliveBg, bd: C.oliveBd, txt: C.olive }
+        return { bg: '#EEF8F2', bd: '#C8E1D1', txt: C.greenDark }
       case 'fair':
-        return { bg: C.terraBg, bd: C.terraBd, txt: C.terraDark }
+        return { bg: '#F3FAF6', bd: '#D6E9DE', txt: C.green }
       case 'uncertain':
-        return { bg: C.cardSoft, bd: C.borderSoft, txt: C.textSoft }
       case 'new':
       default:
-        return { bg: C.amberBg, bd: C.amberBd, txt: C.amber }
+        return { bg: '#F6FBF8', bd: '#DCEBE2', txt: C.greenDark }
     }
   })()
 
   const badges = [
-    missions <= 0 ? { lbl: 'Nouveau', bg: C.amberBg, bd: C.amberBd, txt: C.amber } : null,
-    { lbl: presenceSummary, bg: presenceBadgeStyle.bg, bd: presenceBadgeStyle.bd, txt: presenceBadgeStyle.txt },
-    serveur.disponible ? { lbl: 'Disponible', bg: C.blueBg, bd: C.blueBd, txt: C.blue } : null,
-  ].filter(Boolean) as { lbl: string; bg: string; bd: string; txt: string }[]
+    { lbl: experienceBadge, bg: experienceBadgeStyle.bg, bd: experienceBadgeStyle.bd, txt: experienceBadgeStyle.txt },
+    { lbl: presenceBadge.label, bg: presenceBadgeStyle.bg, bd: presenceBadgeStyle.bd, txt: presenceBadgeStyle.txt },
+  ]
 
   const quickStats = [
     { lbl: 'Présence', val: presenceRateValue },
@@ -483,22 +493,24 @@ export default function ProfilServeurPublic() {
 
       <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.75}>
-          <Text style={s.backTxt}>← Retour</Text>
+          <Text style={s.backTxt}>Retour</Text>
         </TouchableOpacity>
 
         <View style={s.headerCard}>
           <View style={s.headerLeft}>
             <Text style={s.headerNom}>{serveur.prenom} {serveur.nom}</Text>
             <Text style={s.headerSous}>
-              {niveau} - {missions} mission{missions > 1 ? 's' : ''} réalisée{missions > 1 ? 's' : ''}
+              {missions} mission{missions > 1 ? 's' : ''} réalisée{missions > 1 ? 's' : ''}
             </Text>
             <View style={s.chipsRow}>
-              <View style={s.chip}>
-                <Text style={s.chipTxt}>{serveur.ville}</Text>
-              </View>
-              <View style={s.chip}>
-                <Text style={s.chipTxt}>{primaryExperienceLabel}</Text>
-              </View>
+              {badges.map((badge, index) => (
+                <View
+                  key={`${badge.lbl}-${index}`}
+                  style={[s.chip, { backgroundColor: badge.bg, borderColor: badge.bd }]}
+                >
+                  <Text style={[s.chipTxt, { color: badge.txt }]}>{badge.lbl}</Text>
+                </View>
+              ))}
             </View>
           </View>
 

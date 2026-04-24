@@ -45,7 +45,7 @@ export function getDashboardPatronStatusConfig(
     case 'open':
       return { label: 'En attente', bg: colors.amberBg, color: colors.amber, border: colors.amberBd }
     case 'confirmed':
-      return { label: 'Sélectionnée', bg: colors.greenBg, color: colors.green, border: colors.greenBd }
+      return { label: 'Confirmée', bg: colors.greenBg, color: colors.green, border: colors.greenBd }
     case 'in_progress':
       return { label: 'En cours', bg: colors.greenBg, color: colors.green, border: colors.greenBd }
     case 'completed':
@@ -53,11 +53,9 @@ export function getDashboardPatronStatusConfig(
     case 'no_show':
       return { label: 'Serveur absent', bg: colors.redBg, color: colors.red, border: colors.redBd }
     case 'cancelled_by_patron':
-      return { label: 'Annulée par vous', bg: colors.redBg, color: colors.red, border: colors.redBd }
     case 'cancelled_by_server':
-      return { label: 'Annulée par le serveur', bg: colors.redBg, color: colors.red, border: colors.redBd }
     case 'expired':
-      return { label: 'Expirée', bg: colors.redBg, color: colors.red, border: colors.redBd }
+      return { label: 'Annulée', bg: colors.redBg, color: colors.red, border: colors.redBd }
     default:
       return { label: statut, bg: '#F5F3F0', color: '#888', border: '#E0D9D0' }
   }

@@ -291,30 +291,87 @@ export async function createEngagementForMissionSelection(input: {
   agreedHourlyRate?: number | null
   replacedEngagementId?: string | null
 }): Promise<EngagementRecord | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  console.log('confirm proposed mission click', {
+    authUid: user?.id ?? null,
+    missionId: input.missionId,
+    patronId: input.patronId,
+    serveurId: input.serveurId,
+    replacedEngagementId: input.replacedEngagementId ?? null,
+  })
+
   const existing = await fetchActiveEngagementForMission(input.missionId)
   if (existing) {
+    console.log('create engagement existing found', {
+      authUid: user?.id ?? null,
+      missionId: input.missionId,
+      existingEngagementId: existing.id,
+      existingServeurId: existing.serveur_id,
+      existingStatus: existing.status,
+    })
     if (existing.serveur_id === input.serveurId) return existing
     return null
   }
 
   const nowIso = new Date().toISOString()
+  const payload = {
+    mission_id: input.missionId,
+    patron_id: input.patronId,
+    serveur_id: input.serveurId,
+    status: 'pending_signature',
+    selected_at: nowIso,
+    confirmed_at: null,
+    agreed_hourly_rate: input.agreedHourlyRate ?? null,
+    contract_status: 'not_generated',
+    replaced_engagement_id: input.replacedEngagementId ?? null,
+  }
+
+  console.log('create engagement payload', {
+    authUid: user?.id ?? null,
+    serveurRowId: input.serveurId,
+    missionId: input.missionId,
+    payload,
+  })
+
   const { data, error } = await supabase
     .from('engagements')
-    .insert({
-      mission_id: input.missionId,
-      patron_id: input.patronId,
-      serveur_id: input.serveurId,
-      status: 'pending_signature',
-      selected_at: nowIso,
-      confirmed_at: null,
-      agreed_hourly_rate: input.agreedHourlyRate ?? null,
-      contract_status: 'not_generated',
-      replaced_engagement_id: input.replacedEngagementId ?? null,
-    })
+    .insert(payload)
     .select(ENGAGEMENT_COMPAT_SELECT)
     .single()
 
-  if (error || !data) return null
+  if (error || !data) {
+    const supabaseErrorDetails = error
+      ? {
+          message: error.message,
+          code: (error as any)?.code ?? null,
+          details: (error as any)?.details ?? null,
+          hint: (error as any)?.hint ?? null,
+          raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+        }
+      : null
+
+    console.error('create engagement supabase error', supabaseErrorDetails)
+    console.error('create engagement error', {
+      authUid: user?.id ?? null,
+      missionId: input.missionId,
+      serveurId: input.serveurId,
+      patronId: input.patronId,
+      payload,
+      result: data ?? null,
+      error: supabaseErrorDetails,
+    })
+    return null
+  }
+
+  console.log('create engagement result', {
+    authUid: user?.id ?? null,
+    missionId: input.missionId,
+    engagementId: (data as any)?.id ?? null,
+    status: (data as any)?.status ?? null,
+  })
   return normalizeEngagementRecord(data as RawEngagementRecord)
 }
 

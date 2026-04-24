@@ -1,6 +1,8 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
+import { StripeProvider } from '@stripe/stripe-react-native'
+import { NativeModules, Platform } from 'react-native'
 import { ensureAccountProfileForUser } from '../lib/auth-profile-sync'
 import { getHomeRouteForRole, getLoginRouteForRole, getRequiredRoleForSegments, resolveAccountRole } from '../lib/auth-role'
 import { enregistrerNotifications, shouldRetryPushRegistration } from '../lib/notifications'
@@ -9,6 +11,45 @@ import { supabase } from '../lib/supabase'
 export default function RootLayout() {
   const router = useRouter()
   const segments = useSegments()
+  const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
+  const stripeNativeModuleAvailable = Platform.OS !== 'web' && Boolean((NativeModules as any)?.StripeSdk)
+
+  useEffect(() => {
+    if (!__DEV__) return
+
+    const devSettings = NativeModules.DevSettings as {
+      setProfilingEnabled?: (enabled: boolean) => void
+      setIsShakeToShowDevMenuEnabled?: (enabled: boolean) => void
+    } | null
+
+    const disableDebugOverlays = () => {
+      devSettings?.setProfilingEnabled?.(false)
+      devSettings?.setIsShakeToShowDevMenuEnabled?.(false)
+    }
+
+    disableDebugOverlays()
+
+    const timeoutIds = [
+      setTimeout(disableDebugOverlays, 0),
+      setTimeout(disableDebugOverlays, 250),
+      setTimeout(disableDebugOverlays, 1000),
+    ]
+    const intervalId = setInterval(disableDebugOverlays, 2000)
+
+    return () => {
+      timeoutIds.forEach(clearTimeout)
+      clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!__DEV__) return
+    console.log('stripe runtime key loaded', {
+      loaded: Boolean(stripePublishableKey),
+      prefix: stripePublishableKey ? stripePublishableKey.slice(0, 7) : null,
+      nativeModuleAvailable: stripeNativeModuleAvailable,
+    })
+  }, [stripeNativeModuleAvailable, stripePublishableKey])
 
   useEffect(() => {
     let cancelled = false
@@ -79,10 +120,16 @@ export default function RootLayout() {
     }
   }, [router, segments])
 
-  return (
+  const appContent = (
     <>
       <Stack screenOptions={{ headerShown: false }} />
       <StatusBar style="auto" />
     </>
   )
+
+  if (!stripePublishableKey || !stripeNativeModuleAvailable) {
+    return appContent
+  }
+
+  return <StripeProvider publishableKey={stripePublishableKey}>{appContent}</StripeProvider>
 }

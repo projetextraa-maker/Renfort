@@ -1,5 +1,5 @@
-import { normalizeMissionStatus, shouldHideMissionFromOpenLists } from './missions'
-import { computeServeurMissionStatsFromAnnonces } from './serveur-stats'
+﻿import { normalizeMissionStatus, shouldHideMissionFromOpenLists } from './missions'
+import { computeServeurMissionStatsFromAnnonces, getServeurExperienceBadgeKey } from './serveur-stats'
 import { supabase } from './supabase'
 
 export type MissionRateNegotiationTier = 'none' | 'plus_1' | 'plus_2' | 'plus_3_or_20pct'
@@ -32,6 +32,7 @@ export type MissionRateNegotiationEligibility = {
   presenceRate: number | null
   completedMissions: number
   noShowMissions: number
+  recentTrackedMissionCount: number
   recentNoShowCount: number
   cancellationRate: number | null
   reasons: string[]
@@ -132,6 +133,7 @@ async function getServeurReliabilitySnapshot(serveurId: string): Promise<{
   completedMissions: number
   noShowMissions: number
   presenceRate: number | null
+  recentTrackedMissionCount: number
   recentNoShowCount10: number
   recentNoShowCount20: number
   cancellationRate: number | null
@@ -157,18 +159,34 @@ async function getServeurReliabilitySnapshot(serveurId: string): Promise<{
 
   const { data: recentRows } = await supabase
     .from('annonces')
-    .select('statut, date, heure_debut, created_at')
+    .select('statut, check_in_status, checked_out_at, date, heure_debut, created_at')
     .eq('serveur_id', serveurId)
-    .in('statut', ['completed', 'terminee', 'no_show', 'cancelled_by_server'])
+    .in('statut', ['completed', 'terminee', 'no_show'])
     .order('date', { ascending: false })
     .order('heure_debut', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(20)
+    .limit(10)
 
-  const recentStatuses = (recentRows ?? []).map((row: any) => String(row.statut ?? '').toLowerCase())
-  const recentNoShowCount10 = recentStatuses.slice(0, 10).filter((status) => status === 'no_show').length
-  const recentNoShowCount20 = recentStatuses.slice(0, 20).filter((status) => status === 'no_show').length
-  const recentCancelledCount = recentStatuses.filter((status) => status === 'cancelled_by_server').length
+  const recentMissionRows = (recentRows ?? []) as Array<{
+    statut?: string | null
+    check_in_status?: string | null
+    checked_out_at?: string | null
+  }>
+  const recentTrackedMissionCount = recentMissionRows.length
+  const recentNoShowCount10 = recentMissionRows.filter((row) => String(row.statut ?? '').toLowerCase() === 'no_show').length
+  const recentCompletedWithPresenceCount10 = recentMissionRows.filter((row) => {
+    const status = String(row.statut ?? '').toLowerCase()
+    const checkInStatus = String(row.check_in_status ?? '').toLowerCase()
+    return (status === 'completed' || status === 'terminee') &&
+      (Boolean(row.checked_out_at) || checkInStatus === 'checked_out')
+  }).length
+  const recentPresenceRate =
+    recentTrackedMissionCount > 0
+      ? Math.round((recentCompletedWithPresenceCount10 / recentTrackedMissionCount) * 100)
+      : null
+
+  const recentNoShowCount20 = recentNoShowCount10
+  const recentCancelledCount = 0
   const trackedReliabilityCount = completedMissions + noShowMissions + recentCancelledCount
   const cancellationRate =
     trackedReliabilityCount > 0
@@ -178,7 +196,8 @@ async function getServeurReliabilitySnapshot(serveurId: string): Promise<{
   return {
     completedMissions,
     noShowMissions,
-    presenceRate,
+    presenceRate: recentPresenceRate,
+    recentTrackedMissionCount,
     recentNoShowCount10,
     recentNoShowCount20,
     cancellationRate,
@@ -189,6 +208,7 @@ async function getServeurReliabilitySnapshot(serveurId: string): Promise<{
 function getNegotiationTierFromSnapshot(input: {
   baseRate: number
   completedMissions: number
+  recentTrackedMissionCount: number
   presenceRate: number | null
   recentNoShowCount10: number
   recentNoShowCount20: number
@@ -196,30 +216,44 @@ function getNegotiationTierFromSnapshot(input: {
   ratingAverage: number | null
 }): { tier: MissionRateNegotiationTier; maxAllowedRate: number; reasons: string[] } {
   const reasons: string[] = []
+  const badgeKey = getServeurExperienceBadgeKey(input.completedMissions)
 
-  const isReliable =
-    input.completedMissions >= 3 &&
-    (input.presenceRate ?? 0) >= 90 &&
-    input.recentNoShowCount10 === 0 &&
-    (input.ratingAverage ?? 0) >= 4.2 &&
-    (input.cancellationRate ?? 0) <= 10
-
-  const isVeryGood =
-    input.completedMissions >= 50 &&
-    (input.presenceRate ?? 0) >= 96 &&
-    input.recentNoShowCount20 === 0 &&
-    (input.ratingAverage ?? 0) >= 4.6 &&
-    (input.cancellationRate ?? 0) <= 5
-
-  if (isVeryGood) {
+  if (input.recentTrackedMissionCount < 10) {
+    reasons.push('Au moins 10 missions récentes sont nécessaires pour négocier.')
     return {
-      tier: 'plus_3_or_20pct',
-      maxAllowedRate: roundMoney(input.baseRate + Math.min(3, input.baseRate * 0.2)),
+      tier: 'none',
+      maxAllowedRate: roundMoney(input.baseRate),
       reasons,
     }
   }
 
-  if (isReliable && input.completedMissions >= 20) {
+  if ((input.presenceRate ?? 0) < 90) {
+    reasons.push('Présence insuffisante sur les 10 dernières missions.')
+    return {
+      tier: 'none',
+      maxAllowedRate: roundMoney(input.baseRate),
+      reasons,
+    }
+  }
+
+  if ((input.ratingAverage ?? 0) < 4) {
+    reasons.push('Une note minimale de 4/5 est requise pour négocier.')
+    return {
+      tier: 'none',
+      maxAllowedRate: roundMoney(input.baseRate),
+      reasons,
+    }
+  }
+
+  if (badgeKey === 'expert') {
+    return {
+      tier: 'plus_3_or_20pct',
+      maxAllowedRate: roundMoney(input.baseRate + 3),
+      reasons,
+    }
+  }
+
+  if (badgeKey === 'experimente') {
     return {
       tier: 'plus_2',
       maxAllowedRate: roundMoney(input.baseRate + 2),
@@ -227,7 +261,7 @@ function getNegotiationTierFromSnapshot(input: {
     }
   }
 
-  if (isReliable) {
+  if (badgeKey === 'confirme') {
     return {
       tier: 'plus_1',
       maxAllowedRate: roundMoney(input.baseRate + 1),
@@ -235,11 +269,7 @@ function getNegotiationTierFromSnapshot(input: {
     }
   }
 
-  if (input.completedMissions < 3) reasons.push('Moins de 3 missions terminées.')
-  if ((input.presenceRate ?? 0) < 90) reasons.push('Présence insuffisante.')
-  if (input.recentNoShowCount10 > 0) reasons.push('No-show récent détecté.')
-  if ((input.ratingAverage ?? 0) < 4.2) reasons.push('Note globale insuffisante.')
-  if ((input.cancellationRate ?? 0) > 10) reasons.push('Trop d’annulations récentes.')
+  reasons.push('Le badge actuel ne permet pas la négociation.')
 
   return {
     tier: 'none',
@@ -261,6 +291,7 @@ export async function getMissionRateNegotiationEligibility(
     presenceRate: null,
     completedMissions: 0,
     noShowMissions: 0,
+    recentTrackedMissionCount: 0,
     recentNoShowCount: 0,
     cancellationRate: null,
     reasons,
@@ -283,7 +314,7 @@ export async function getMissionRateNegotiationEligibility(
   const baseRate = roundMoney(toSafeNumber((mission as any).salaire))
   const missionStatus = normalizeMissionStatus((mission as any).statut)
   if (missionStatus !== 'open') {
-    return denied(['La mission n’est plus ouverte à la négociation.'], baseRate)
+    return denied(['La mission nâ€™est plus ouverte Ã  la nÃ©gociation.'], baseRate)
   }
 
   if (
@@ -294,7 +325,7 @@ export async function getMissionRateNegotiationEligibility(
       (mission as any).heure_fin
     )
   ) {
-    return denied(['La mission n’est plus disponible.'], baseRate)
+    return denied(['La mission nâ€™est plus disponible.'], baseRate)
   }
 
   const { data: existingEngagement } = await supabase
@@ -307,7 +338,7 @@ export async function getMissionRateNegotiationEligibility(
     .maybeSingle()
 
   if (existingEngagement && ['confirmed', 'active', 'completed'].includes(String((existingEngagement as any).status ?? '').toLowerCase())) {
-    return denied(['La mission est déjà engagée ou confirmée.'], baseRate)
+    return denied(['La mission est dÃ©jÃ  engagÃ©e ou confirmÃ©e.'], baseRate)
   }
 
   const { data: existingNegotiation } = await supabase
@@ -318,7 +349,7 @@ export async function getMissionRateNegotiationEligibility(
     .maybeSingle()
 
   if (existingNegotiation?.id) {
-    return denied(['Une contre-offre existe déjà pour cette mission.'], baseRate)
+    return denied(['Une contre-offre existe dÃ©jÃ  pour cette mission.'], baseRate)
   }
 
   const snapshot = await getServeurReliabilitySnapshot(serveurId)
@@ -336,6 +367,7 @@ export async function getMissionRateNegotiationEligibility(
     presenceRate: snapshot.presenceRate,
     completedMissions: snapshot.completedMissions,
     noShowMissions: snapshot.noShowMissions,
+    recentTrackedMissionCount: snapshot.recentTrackedMissionCount,
     recentNoShowCount:
       tierResult.tier === 'plus_3_or_20pct' ? snapshot.recentNoShowCount20 : snapshot.recentNoShowCount10,
     cancellationRate: snapshot.cancellationRate,
@@ -406,7 +438,7 @@ export async function createMissionRateCounterOffer(input: {
     return {
       ok: false,
       reason: 'not_allowed',
-      message: eligibility.reasons[0] ?? 'La négociation n’est pas disponible pour cette mission.',
+      message: eligibility.reasons[0] ?? 'La nÃ©gociation nâ€™est pas disponible pour cette mission.',
     }
   }
 
@@ -415,7 +447,7 @@ export async function createMissionRateCounterOffer(input: {
     return {
       ok: false,
       reason: 'invalid_rate',
-      message: `Le tarif proposé doit être compris entre ${eligibility.baseRate} et ${eligibility.maxAllowedRate} ${String.fromCharCode(8364)}.`,
+      message: `Le tarif proposÃ© doit Ãªtre compris entre ${eligibility.baseRate} et ${eligibility.maxAllowedRate} ${String.fromCharCode(8364)}.`,
     }
   }
 
@@ -448,14 +480,14 @@ export async function createMissionRateCounterOffer(input: {
 
   if (error) {
     if (String((error as any).message ?? '').toLowerCase().includes('duplicate')) {
-      return { ok: false, reason: 'already_exists', message: 'Une contre-offre existe déjà pour cette mission.' }
+      return { ok: false, reason: 'already_exists', message: 'Une contre-offre existe dÃ©jÃ  pour cette mission.' }
     }
-    return { ok: false, reason: 'write_failed', message: 'Impossible d’enregistrer la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™enregistrer la contre-offre.' }
   }
 
   const negotiation = normalizeMissionRateNegotiationRecord(data as RawMissionRateNegotiation)
   if (!negotiation) {
-    return { ok: false, reason: 'write_failed', message: 'Impossible d’enregistrer la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™enregistrer la contre-offre.' }
   }
 
   return { ok: true, negotiation, eligibility }
@@ -480,7 +512,7 @@ export async function acceptMissionRateCounterOffer(input: {
   }
 
   if (negotiation.status !== 'pending') {
-    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus être acceptée.' }
+    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus Ãªtre acceptÃ©e.' }
   }
 
   const acceptedAt = new Date().toISOString()
@@ -497,7 +529,7 @@ export async function acceptMissionRateCounterOffer(input: {
     .maybeSingle()
 
   if (error) {
-    return { ok: false, reason: 'write_failed', message: 'Impossible d’accepter la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™accepter la contre-offre.' }
   }
 
   if (input.engagementId) {
@@ -509,7 +541,7 @@ export async function acceptMissionRateCounterOffer(input: {
 
   const normalized = normalizeMissionRateNegotiationRecord(data as RawMissionRateNegotiation)
   if (!normalized) {
-    return { ok: false, reason: 'write_failed', message: 'Impossible d’accepter la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™accepter la contre-offre.' }
   }
 
   return { ok: true, negotiation: normalized }
@@ -533,7 +565,7 @@ export async function rejectMissionRateCounterOffer(
   }
 
   if (negotiation.status !== 'pending') {
-    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus être refusée.' }
+    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus Ãªtre refusÃ©e.' }
   }
 
   const rejectedAt = new Date().toISOString()
@@ -559,3 +591,5 @@ export async function rejectMissionRateCounterOffer(
 
   return { ok: true, negotiation: normalized }
 }
+
+

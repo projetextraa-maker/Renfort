@@ -73,6 +73,8 @@ begin
         payment_status in (
           'not_authorized',
           'authorized_hold',
+          'captured',
+          'capture_failed',
           'released',
           'blocked',
           'refunded'

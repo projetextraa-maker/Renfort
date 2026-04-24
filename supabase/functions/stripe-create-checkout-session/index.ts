@@ -88,9 +88,20 @@ serve(async (req) => {
 
     const { data: billingProfile } = await admin
       .from('patron_billing_profiles')
-      .select('stripe_customer_id')
+      .select('stripe_customer_id, stripe_subscription_id, stripe_status')
       .eq('patron_id', user.id)
       .maybeSingle()
+
+    const hasManagedSubscription =
+      Boolean(billingProfile?.stripe_subscription_id) &&
+      (billingProfile?.stripe_status === 'active' || billingProfile?.stripe_status === 'trialing')
+
+    if (hasManagedSubscription) {
+      return new Response(JSON.stringify({ error: 'Subscription already active. Use billing portal to manage it.' }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     let customerId = billingProfile?.stripe_customer_id ?? null
 

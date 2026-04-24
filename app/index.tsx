@@ -194,8 +194,19 @@ export default function HomeScreen() {
                     },
                   ]}
                 >
-                  Trouvez du personnel rapidement
+                  Travaillez. Recrutez.
                 </Animated.Text>
+                <Animated.View
+                  style={[
+                    styles.immediateWrap,
+                    {
+                      opacity: titleFadeAnim,
+                      transform: [{ translateY: titleTranslateAnim }],
+                    },
+                  ]}
+                >
+                  <Text style={styles.immediateText}>Immédiatement.</Text>
+                </Animated.View>
                 <Animated.Text
                   style={[
                     styles.subtitle,
@@ -379,6 +390,22 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     maxWidth: 300,
   },
+  immediateWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -6,
+    marginBottom: 20,
+    minHeight: 42,
+    width: '100%',
+  },
+  immediateText: {
+    fontSize: 35,
+    lineHeight: 39,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+    color: '#E58A3A',
+    textAlign: 'center',
+  },
   titleSecondary: {
     fontSize: 31,
     lineHeight: 36,
@@ -477,15 +504,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   choiceCardSecondary: {
-    backgroundColor: '#E8DED0',
+    backgroundColor: '#1F6B45',
     borderRadius: 22,
     paddingHorizontal: 18,
     paddingVertical: 18,
     borderWidth: 1,
-    borderColor: '#D6C6B2',
-    shadowColor: C.shadow,
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 7 },
+    borderColor: '#1A5B3A',
+    shadowColor: '#1F6B45',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 10 },
     shadowRadius: 14,
     elevation: 4,
     minHeight: 112,
@@ -496,7 +523,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.97 }],
   },
   choiceTitleSecondary: {
-    color: '#1A1715',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '900',
     letterSpacing: -0.3,
@@ -504,7 +531,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   choiceSubtextSecondary: {
-    color: '#5F544B',
+    color: 'rgba(255,255,255,0.84)',
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',

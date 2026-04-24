@@ -24,6 +24,7 @@ export type RawAnnonceRecord = {
   presence_confirmation_status?: string | null
   contract_status?: string | null
   payment_status?: string | null
+  launch_offer_applied?: boolean | null
   check_in_status?: string | null
   dpae_done?: boolean | null
   dpae_status?: string | null
@@ -32,6 +33,9 @@ export type RawAnnonceRecord = {
   dpae_payload_snapshot?: Record<string, unknown> | null
   checked_in_at?: string | null
   checked_out_at?: string | null
+  check_out_requested_by?: string | null
+  check_out_requested_at?: string | null
+  check_out_confirmed_at?: string | null
   created_at?: string | null
 }
 
@@ -59,6 +63,7 @@ export type NormalizedAnnonceRecord = {
   presence_confirmation_status: string | null
   contract_status: string | null
   payment_status: string | null
+  launch_offer_applied: boolean | null
   check_in_status: string | null
   dpae_done: boolean | null
   dpae_status: string | null
@@ -67,6 +72,9 @@ export type NormalizedAnnonceRecord = {
   dpae_payload_snapshot: Record<string, unknown> | null
   checked_in_at: string | null
   checked_out_at: string | null
+  check_out_requested_by: string | null
+  check_out_requested_at: string | null
+  check_out_confirmed_at: string | null
   created_at: string | null
 }
 
@@ -98,6 +106,7 @@ export const ANNONCE_WORKFLOW_SELECT = `
   presence_confirmation_status,
   contract_status,
   payment_status,
+  launch_offer_applied,
   check_in_status,
   dpae_done,
   dpae_status,
@@ -105,7 +114,10 @@ export const ANNONCE_WORKFLOW_SELECT = `
   dpae_done_by,
   dpae_payload_snapshot,
   checked_in_at,
-  checked_out_at
+  checked_out_at,
+  check_out_requested_by,
+  check_out_requested_at,
+  check_out_confirmed_at
 `
 
 export const ANNONCE_COMPAT_WITH_WORKFLOW_SELECT = `
@@ -133,6 +145,7 @@ export const ANNONCE_COMPAT_WITH_WORKFLOW_SELECT = `
   presence_confirmation_status,
   contract_status,
   payment_status,
+  launch_offer_applied,
   check_in_status,
   dpae_done,
   dpae_status,
@@ -140,7 +153,10 @@ export const ANNONCE_COMPAT_WITH_WORKFLOW_SELECT = `
   dpae_done_by,
   dpae_payload_snapshot,
   checked_in_at,
-  checked_out_at
+  checked_out_at,
+  check_out_requested_by,
+  check_out_requested_at,
+  check_out_confirmed_at
 `
 
 function normalizeMissionSlot(raw: RawAnnonceRecord): AnnonceMissionSlot {
@@ -200,6 +216,7 @@ export function normalizeAnnonceRecord(raw: RawAnnonceRecord): NormalizedAnnonce
     presence_confirmation_status: raw.presence_confirmation_status ?? null,
     contract_status: raw.contract_status ?? null,
     payment_status: raw.payment_status ?? null,
+    launch_offer_applied: typeof raw.launch_offer_applied === 'boolean' ? raw.launch_offer_applied : null,
     check_in_status: raw.check_in_status ?? null,
     dpae_done: typeof raw.dpae_done === 'boolean' ? raw.dpae_done : null,
     dpae_status: raw.dpae_status ?? null,
@@ -211,6 +228,9 @@ export function normalizeAnnonceRecord(raw: RawAnnonceRecord): NormalizedAnnonce
         : null,
     checked_in_at: raw.checked_in_at ?? null,
     checked_out_at: raw.checked_out_at ?? null,
+    check_out_requested_by: raw.check_out_requested_by ?? null,
+    check_out_requested_at: raw.check_out_requested_at ?? null,
+    check_out_confirmed_at: raw.check_out_confirmed_at ?? null,
     created_at: raw.created_at ?? null,
   }
 }

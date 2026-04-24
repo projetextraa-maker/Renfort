@@ -33,11 +33,11 @@ export function getPresenceBadge(
   const rate = getPresenceRate(missionsRealisees, missionsNoShow)
 
   if (trackedCount < 3 || rate == null) {
-    return { label: 'Nouveau', tone: 'new', rate, trackedCount }
+    return { label: 'À confirmer', tone: 'new', rate, trackedCount }
   }
 
   if (rate >= 95) {
-    return { label: 'Tres fiable', tone: 'very_reliable', rate, trackedCount }
+    return { label: 'Très fiable', tone: 'very_reliable', rate, trackedCount }
   }
 
   if (rate >= 85) {
@@ -48,5 +48,5 @@ export function getPresenceBadge(
     return { label: 'Correct', tone: 'fair', rate, trackedCount }
   }
 
-  return { label: 'A confirmer', tone: 'uncertain', rate, trackedCount }
+  return { label: 'À confirmer', tone: 'uncertain', rate, trackedCount }
 }

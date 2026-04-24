@@ -38,7 +38,7 @@ import {
 
 type AssignAnnonceResult =
   | { ok: true }
-  | { ok: false; reason: 'not_found' | 'already_assigned' | 'worker_unavailable' | 'invalid_status' | 'update_failed' }
+  | { ok: false; reason: 'not_found' | 'already_assigned' | 'worker_unavailable' | 'invalid_status' | 'update_failed'; message?: string }
 
 type CancelAnnonceResult =
   | { ok: true }
@@ -49,11 +49,66 @@ type UpdateAnnonceStatusResult =
   | { ok: false; reason: 'not_found' | 'invalid_status' | 'update_failed' }
 
 type MissionWorkflowResult =
-  | { ok: true; changed: boolean }
+  | { ok: true; changed: boolean; stage?: 'pending_confirmation' | 'confirmed' }
   | { ok: false; reason: 'not_found' | 'invalid_status' | 'update_failed' | 'blocked'; message?: string }
 
 function logMissionWorkflowSchemaDependency(step: string, detail: string, extra?: Record<string, unknown>) {
   console.warn(`mission-workflow:${step}`, { detail, ...(extra ?? {}) })
+}
+
+function logDpaeDebug(stage: string, payload: Record<string, unknown>) {
+  console.log(`mission-dpae:${stage}`, payload)
+}
+
+function logDpaeReturningError(payload: Record<string, unknown>) {
+  console.error('mission-dpae:returning-error', payload)
+}
+
+async function captureMissionPaymentIfNeeded(annonceId: string): Promise<void> {
+  try {
+    const { data: mission, error: missionError } = await supabase
+      .from('annonces')
+      .select('id, payment_intent_id, payment_status')
+      .eq('id', annonceId)
+      .maybeSingle()
+
+    if (missionError) {
+      console.log('mission payment capture read failed', {
+        missionId: annonceId,
+        error: missionError.message,
+      })
+      return
+    }
+
+    if (!mission?.id || !mission.payment_intent_id || mission.payment_status === 'captured') {
+      return
+    }
+
+    const { data, error } = await supabase.functions.invoke('stripe-capture-mission-payment-intent', {
+      body: { missionId: annonceId },
+    })
+
+    if (error || data?.error) {
+      console.log('mission payment capture failed', {
+        missionId: annonceId,
+        error: error?.message ?? data?.error ?? null,
+        stripeStatus: data?.stripeStatus ?? null,
+      })
+      return
+    }
+
+    console.log('mission payment capture succeeded', {
+      missionId: annonceId,
+      paymentIntentId: data?.paymentIntentId ?? null,
+      stripeStatus: data?.stripeStatus ?? null,
+      missionPaymentStatus: data?.missionPaymentStatus ?? null,
+    })
+  } catch (error: any) {
+    console.log('mission payment capture unexpected error', {
+      missionId: annonceId,
+      error: error?.message ?? String(error),
+    })
+  }
 }
 
 function isMissingDpaeSchemaError(error: unknown): boolean {
@@ -79,6 +134,32 @@ function isMissingEngagementsSchemaError(error: unknown): boolean {
     message.includes('relation "engagements" does not exist') ||
     message.includes("schema cache")
   )
+}
+
+function getSupabaseErrorDebug(error: unknown) {
+  return {
+    message: String((error as { message?: string } | null)?.message ?? ''),
+    code: (error as { code?: string } | null)?.code ?? null,
+    details: (error as { details?: string } | null)?.details ?? null,
+    hint: (error as { hint?: string } | null)?.hint ?? null,
+  }
+}
+
+function getReadableDpaeErrorMessage(error: unknown, fallback = 'Impossible de confirmer la DPAE.') {
+  const debug = getSupabaseErrorDebug(error)
+  let raw = ''
+  try {
+    raw = JSON.stringify(error, Object.getOwnPropertyNames(error as object))
+  } catch {
+    raw = String(error ?? '')
+  }
+  const parts = [debug.message, debug.code, debug.details, debug.hint]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+
+  if (parts.length === 0 && raw.trim()) return raw.trim()
+  if (parts.length === 0) return fallback
+  return parts.join(' | ')
 }
 
 type DpaePayloadSnapshot = {
@@ -127,6 +208,15 @@ function isMissingDpaeRecordsSchemaError(error: unknown): boolean {
     message.includes("could not find the table 'dpae_records'") ||
     message.includes('relation "public.dpae_records" does not exist') ||
     message.includes('relation "dpae_records" does not exist')
+  )
+}
+
+function isDpaeRecordsPermissionError(error: unknown): boolean {
+  const message = String((error as { message?: string } | null)?.message ?? '').toLowerCase()
+  return (
+    message.includes('row-level security') ||
+    message.includes('permission denied') ||
+    message.includes('violates row-level security policy')
   )
 }
 
@@ -241,6 +331,7 @@ async function buildMissionDpaePayload(annonceId: string): Promise<DpaePayloadSn
 type MissionWorkflowSnapshot = {
   id: string
   statut: string | null
+  etablissement_id?: string | null
   date?: string | null
   heure_debut?: string | null
   heure_fin?: string | null
@@ -256,9 +347,24 @@ type MissionWorkflowSnapshot = {
   dpae_payload_snapshot?: Record<string, unknown> | null
   engagement_checked_in_at?: string | null
   engagement_checked_out_at?: string | null
+  check_out_requested_by?: string | null
+  check_out_requested_at?: string | null
+  check_out_confirmed_at?: string | null
 }
 
 export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<MissionWorkflowSnapshot | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  logDpaeDebug('fetch_snapshot:prequery', {
+    mission_id: annonceId,
+    patron_id: user?.id ?? null,
+    etablissement_id: null,
+    table: 'annonces',
+    where: { id: annonceId },
+  })
+
   const engagement = await fetchActiveEngagementForMission(annonceId)
   const contract = engagement ? await getContractForEngagement(engagement.id) : null
   const { data, error } = await supabase
@@ -267,8 +373,65 @@ export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<M
     .eq('id', annonceId)
     .maybeSingle()
 
-  if (error || !data) return null
-  const normalized = normalizeAnnonceRecord(data as any)
+  let annonceRow: any = null
+
+  if (error && /check_in_status|checked_in_at|checked_out_at|check_out_requested_|check_out_confirmed_at|dpae_|contract_status|payment_status/i.test(String(error.message ?? ''))) {
+    logDpaeDebug('fetch_snapshot:workflow_query_error', {
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      table: 'annonces',
+      where: { id: annonceId },
+      error: getSupabaseErrorDebug(error),
+    })
+
+    const compatQuery = await supabase
+      .from('annonces')
+      .select(ANNONCE_COMPAT_SELECT)
+      .eq('id', annonceId)
+      .maybeSingle()
+
+    if (compatQuery.error || !compatQuery.data) {
+      logDpaeDebug('fetch_snapshot:compat_query_error', {
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        table: 'annonces',
+        where: { id: annonceId },
+        error: getSupabaseErrorDebug(compatQuery.error),
+        found: Boolean(compatQuery.data),
+      })
+      return null
+    }
+
+    annonceRow = {
+      ...compatQuery.data,
+      checked_out_at: null,
+    }
+  } else {
+    if (error || !data) {
+      logDpaeDebug('fetch_snapshot:not_found', {
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        table: 'annonces',
+        where: { id: annonceId },
+        error: getSupabaseErrorDebug(error),
+        found: Boolean(data),
+      })
+      return null
+    }
+    annonceRow = data
+  }
+
+  const normalized = normalizeAnnonceRecord(annonceRow as any)
+
+  logDpaeDebug('fetch_snapshot:found', {
+    mission_id: annonceId,
+    patron_id: user?.id ?? null,
+    table: 'annonces',
+    where: { id: annonceId },
+    found_mission_id: normalized.id,
+    found_patron_id: normalized.patron_id,
+    found_etablissement_id: normalized.etablissement_id,
+  })
   let dpaeRecord: DpaeRecord | null | undefined = null
   try {
     dpaeRecord = await fetchDpaeRecordForMission(annonceId)
@@ -299,18 +462,21 @@ export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<M
     dpaeError = dpaeAuditQuery.error
   }
 
-  const hasDpaeRecordsLayer = typeof dpaeRecord !== 'undefined'
+  const auditDpaeDone =
+    !dpaeError && dpaeData && typeof dpaeData.dpae_done === 'boolean'
+      ? Boolean(dpaeData.dpae_done)
+      : null
+  const auditDpaeStatus = !dpaeError && dpaeData ? (dpaeData.dpae_status ?? null) : null
+  const auditDpaeDoneAt = !dpaeError && dpaeData ? (dpaeData.dpae_done_at ?? null) : null
+  const auditDpaeDoneBy = !dpaeError && dpaeData ? (dpaeData.dpae_done_by ?? null) : null
+
   const dpaeDone =
-    hasDpaeRecordsLayer
-      ? dpaeRecord?.status === 'confirmed'
-      : !dpaeError && dpaeData && typeof dpaeData.dpae_done === 'boolean'
-        ? Boolean(dpaeData.dpae_done)
-        : null
-  const dpaeStatus = hasDpaeRecordsLayer
-    ? (dpaeRecord?.status ?? 'not_started')
-    : (!dpaeError && dpaeData ? (dpaeData.dpae_status ?? null) : null)
-  const dpaeDoneAt = hasDpaeRecordsLayer ? (dpaeRecord?.confirmed_at ?? null) : (!dpaeError && dpaeData ? (dpaeData.dpae_done_at ?? null) : null)
-  const dpaeDoneBy = hasDpaeRecordsLayer ? (dpaeRecord?.confirmed_by ?? null) : (!dpaeError && dpaeData ? (dpaeData.dpae_done_by ?? null) : null)
+    dpaeRecord?.status === 'confirmed'
+      ? true
+      : auditDpaeDone
+  const dpaeStatus = dpaeRecord?.status ?? auditDpaeStatus ?? 'not_started'
+  const dpaeDoneAt = dpaeRecord?.confirmed_at ?? auditDpaeDoneAt
+  const dpaeDoneBy = dpaeRecord?.confirmed_by ?? auditDpaeDoneBy
   const dpaePayloadSnapshot =
     !dpaeError && dpaeData && dpaeData.dpae_payload_snapshot && typeof dpaeData.dpae_payload_snapshot === 'object'
       ? dpaeData.dpae_payload_snapshot
@@ -319,6 +485,7 @@ export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<M
   return {
     id: normalized.id,
     statut: normalized.statut,
+    etablissement_id: normalized.etablissement_id,
     date: normalized.date,
     heure_debut: normalized.heure_debut,
     heure_fin: normalized.heure_fin,
@@ -334,6 +501,9 @@ export async function fetchMissionWorkflowSnapshot(annonceId: string): Promise<M
     dpae_payload_snapshot: dpaePayloadSnapshot,
     engagement_checked_in_at: engagement?.checked_in_at ?? null,
     engagement_checked_out_at: engagement?.checked_out_at ?? null,
+    check_out_requested_by: normalized.check_out_requested_by ?? null,
+    check_out_requested_at: normalized.check_out_requested_at ?? null,
+    check_out_confirmed_at: normalized.check_out_confirmed_at ?? null,
   }
 }
 
@@ -381,6 +551,7 @@ async function finalizeMissionSelectionWorkflow(input: {
   serveurId: string
   replacedEngagementId?: string | null
 }): Promise<AssignAnnonceResult> {
+  console.log('mission-selection: finalize:start', input)
   const acceptedNegotiation = await fetchAcceptedMissionNegotiationForServer(
     input.serveurId,
     input.annonceId
@@ -410,7 +581,7 @@ async function finalizeMissionSelectionWorkflow(input: {
       console.warn('finalizeMissionSelectionWorkflow blocked: engagements schema unavailable')
     }
 
-    return { ok: false, reason: 'update_failed' }
+    return { ok: false, reason: 'update_failed', message: "Impossible de créer l'engagement de mission." }
   }
 
   const engagementPatch: Record<string, unknown> = {
@@ -457,6 +628,10 @@ async function finalizeMissionSelectionWorkflow(input: {
     .eq('annonce_id', input.annonceId)
 
   if (demandesError || !relatedDemandes) {
+    console.warn('mission-selection: finalize:demandes_fetch_failed', {
+      annonceId: input.annonceId,
+      error: getSupabaseErrorDebug(demandesError),
+    })
     return { ok: true }
   }
 
@@ -490,6 +665,12 @@ export async function assignAnnonceToServeur(
   serveurId: string,
   options?: { replacedEngagementId?: string | null }
 ): Promise<AssignAnnonceResult> {
+  console.log('mission-selection: assign:start', {
+    annonceId,
+    serveurId,
+    replacedEngagementId: options?.replacedEngagementId ?? null,
+  })
+
   const { data: annonce, error: annonceError } = await supabase
     .from('annonces')
     .select('id, statut, serveur_id, patron_id')
@@ -497,8 +678,20 @@ export async function assignAnnonceToServeur(
     .maybeSingle()
 
   if (annonceError || !annonce) {
-    return { ok: false, reason: 'not_found' }
+    console.error('mission-selection: assign:annonce_fetch_error', {
+      annonceId,
+      serveurId,
+      error: getSupabaseErrorDebug(annonceError),
+    })
+    return { ok: false, reason: 'not_found', message: 'Mission introuvable.' }
   }
+
+  console.log('mission-selection: assign:annonce_state', {
+    annonceId,
+    statut: annonce.statut,
+    currentServeurId: annonce.serveur_id ?? null,
+    patronId: annonce.patron_id ?? null,
+  })
 
   const isDraftMission = String(annonce.statut ?? '').toLowerCase() === 'draft'
 
@@ -513,20 +706,20 @@ export async function assignAnnonceToServeur(
     }
 
     if (annonce.serveur_id && annonce.serveur_id !== serveurId) {
-      return { ok: false, reason: 'already_assigned' }
+      return { ok: false, reason: 'already_assigned', message: 'Cette mission est déjà attribuée à un autre profil.' }
     }
 
-    return { ok: false, reason: 'invalid_status' }
+    return { ok: false, reason: 'invalid_status', message: `Cette mission ne peut plus être confirmée dans son statut actuel : ${String(annonce.statut ?? 'inconnu')}.` }
   }
 
   const hasOverlap = await hasServeurOverlappingActiveMission(annonceId, serveurId)
   if (hasOverlap) {
-    return { ok: false, reason: 'worker_unavailable' }
+    return { ok: false, reason: 'worker_unavailable', message: 'Vous êtes déjà engagé sur ce créneau.' }
   }
 
   const activeEngagement = await fetchActiveEngagementForMission(annonceId)
   if (activeEngagement && activeEngagement.serveur_id !== serveurId) {
-    return { ok: false, reason: 'already_assigned' }
+    return { ok: false, reason: 'already_assigned', message: 'Un engagement actif existe déjà pour un autre profil sur cette mission.' }
   }
 
   const { data: updatedAnnonce, error: annonceUpdateError } = await supabase
@@ -549,6 +742,9 @@ export async function assignAnnonceToServeur(
       check_in_status: 'not_checked_in',
       checked_in_at: null,
       checked_out_at: null,
+      check_out_requested_by: null,
+      check_out_requested_at: null,
+      check_out_confirmed_at: null,
       dispute_reason: null,
       dispute_created_at: null,
       cancelled_at: null,
@@ -559,7 +755,16 @@ export async function assignAnnonceToServeur(
     .maybeSingle()
 
   if (annonceUpdateError) {
-    return { ok: false, reason: 'update_failed' }
+    console.error('mission-selection: assign:annonce_update_error', {
+      annonceId,
+      serveurId,
+      patch: {
+        statut: 'confirmed',
+        serveur_id: serveurId,
+      },
+      error: getSupabaseErrorDebug(annonceUpdateError),
+    })
+    return { ok: false, reason: 'update_failed', message: "La mission n'a pas pu être confirmée en base." }
   }
 
   if (!updatedAnnonce) {
@@ -570,7 +775,7 @@ export async function assignAnnonceToServeur(
       .maybeSingle()
 
     if (currentAnnonce?.serveur_id && currentAnnonce.serveur_id !== serveurId) {
-      return { ok: false, reason: 'already_assigned' }
+      return { ok: false, reason: 'already_assigned', message: 'Cette mission a déjà été attribuée pendant votre confirmation.' }
     }
 
     if (currentAnnonce?.serveur_id === serveurId && isActiveMissionStatus(currentAnnonce.statut)) {
@@ -582,7 +787,7 @@ export async function assignAnnonceToServeur(
       })
     }
 
-    return { ok: false, reason: 'invalid_status' }
+    return { ok: false, reason: 'invalid_status', message: `La mission n'est plus confirmable dans son statut actuel : ${String(currentAnnonce?.statut ?? annonce.statut ?? 'inconnu')}.` }
   }
   const workflowResult = await finalizeMissionSelectionWorkflow({
     annonceId,
@@ -592,12 +797,22 @@ export async function assignAnnonceToServeur(
   })
 
   if (!workflowResult.ok) {
+    console.warn('mission-selection: assign:workflow_failed', {
+      annonceId,
+      serveurId,
+      result: workflowResult,
+    })
     await supabase
       .from('annonces')
       .update({ statut: 'open', serveur_id: null })
       .eq('id', annonceId)
   }
 
+  console.log('mission-selection: assign:result', {
+    annonceId,
+    serveurId,
+    result: workflowResult,
+  })
   return workflowResult
 }
 
@@ -937,25 +1152,100 @@ export async function markMissionCheckIn(annonceId: string): Promise<MissionWork
 
 export async function markMissionDpaeDone(annonceId: string): Promise<MissionWorkflowResult> {
   const snapshot = await fetchMissionWorkflowSnapshot(annonceId)
-  if (!snapshot) return { ok: false, reason: 'not_found' }
+  if (!snapshot) {
+    logDpaeReturningError({
+      stage: 'not_found',
+      mission_id: annonceId,
+      message: 'Mission introuvable pour la confirmation DPAE.',
+    })
+    return { ok: false, reason: 'not_found', message: 'Mission introuvable pour la confirmation DPAE.' }
+  }
   const engagement = await fetchActiveEngagementForMission(annonceId)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const dpaePayload = (await buildMissionDpaePayload(annonceId)) ?? snapshot.dpae_payload_snapshot ?? null
+
+  logDpaeDebug('preflight', {
+    mission_id: annonceId,
+    patron_id: user?.id ?? null,
+    etablissement_id: snapshot.etablissement_id ?? null,
+    serveur_id: engagement?.serveur_id ?? null,
+    statut_mission: snapshot.statut ?? null,
+    statut_dpae: snapshot.dpae_status ?? null,
+    pre_requis: {
+      has_engagement: Boolean(engagement),
+      engagement_status: snapshot.engagement_status ?? null,
+      agreement_confirmed: canCheckInWithEngagement(snapshot.engagement_status),
+    },
+    payload: dpaePayload,
+  })
+
   if (!engagement) {
+    logDpaeDebug('blocked:no_engagement', {
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      statut_dpae: snapshot.dpae_status ?? null,
+      payload: dpaePayload,
+    })
+    logDpaeReturningError({
+      stage: 'blocked:no_engagement',
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      statut_dpae: snapshot.dpae_status ?? null,
+      payload: dpaePayload,
+      message: 'La mission doit etre confirmee avant de finaliser la DPAE.',
+    })
     return { ok: false, reason: 'invalid_status', message: 'La mission doit etre confirmee avant de finaliser la DPAE.' }
   }
 
   if (!canCheckInWithEngagement(snapshot.engagement_status)) {
+    logDpaeDebug('blocked:invalid_status', {
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      statut_dpae: snapshot.dpae_status ?? null,
+      engagement_status: snapshot.engagement_status ?? null,
+      payload: dpaePayload,
+    })
+    logDpaeReturningError({
+      stage: 'blocked:invalid_status',
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      statut_dpae: snapshot.dpae_status ?? null,
+      engagement_status: snapshot.engagement_status ?? null,
+      payload: dpaePayload,
+      message: 'La mission doit etre confirmee avant de finaliser la DPAE.',
+    })
     return { ok: false, reason: 'invalid_status', message: 'La mission doit etre confirmee avant de finaliser la DPAE.' }
   }
 
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
     if (!user || user.id !== engagement.patron_id) {
+      logDpaeDebug('blocked:wrong_patron', {
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        expected_patron_id: engagement.patron_id ?? null,
+        etablissement_id: snapshot.etablissement_id ?? null,
+        statut_dpae: snapshot.dpae_status ?? null,
+        payload: dpaePayload,
+      })
+      logDpaeReturningError({
+        stage: 'blocked:wrong_patron',
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        expected_patron_id: engagement.patron_id ?? null,
+        etablissement_id: snapshot.etablissement_id ?? null,
+        statut_dpae: snapshot.dpae_status ?? null,
+        payload: dpaePayload,
+        message: 'Seul l employeur peut confirmer la DPAE.',
+      })
       return { ok: false, reason: 'blocked', message: 'Seul l employeur peut confirmer la DPAE.' }
     }
     const dpaeTimestamp = new Date().toISOString()
-    const dpaePayload = (await buildMissionDpaePayload(annonceId)) ?? snapshot.dpae_payload_snapshot ?? null
     const dpaeRecord = await ensureDpaeRecordForMission(annonceId)
 
     if (dpaeRecord) {
@@ -969,7 +1259,37 @@ export async function markMissionDpaeDone(annonceId: string): Promise<MissionWor
         .eq('mission_id', annonceId)
 
       if (dpaeRecordError && !isMissingDpaeRecordsSchemaError(dpaeRecordError)) {
-        return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
+        logDpaeDebug('error:dpae_records_update', {
+          mission_id: annonceId,
+          patron_id: user?.id ?? null,
+          etablissement_id: snapshot.etablissement_id ?? null,
+          statut_dpae: snapshot.dpae_status ?? null,
+          pre_requis: {
+            has_engagement: Boolean(engagement),
+            engagement_status: snapshot.engagement_status ?? null,
+            agreement_confirmed: canCheckInWithEngagement(snapshot.engagement_status),
+          },
+          payload: dpaePayload,
+          error: getSupabaseErrorDebug(dpaeRecordError),
+        })
+        if (!isDpaeRecordsPermissionError(dpaeRecordError)) {
+          const message = getReadableDpaeErrorMessage(dpaeRecordError, 'Impossible de confirmer la DPAE.')
+          logDpaeReturningError({
+            stage: 'error:dpae_records_update',
+            mission_id: annonceId,
+            patron_id: user?.id ?? null,
+            etablissement_id: snapshot.etablissement_id ?? null,
+            statut_dpae: snapshot.dpae_status ?? null,
+            payload: dpaePayload,
+            supabase: getSupabaseErrorDebug(dpaeRecordError),
+            message,
+          })
+          return {
+            ok: false,
+            reason: 'update_failed',
+            message,
+          }
+        }
       }
       if (isMissingDpaeRecordsSchemaError(dpaeRecordError)) {
         logMissionWorkflowSchemaDependency('dpae_records_update', 'La table dpae_records est absente, fallback legacy utilisé.', {
@@ -978,7 +1298,22 @@ export async function markMissionDpaeDone(annonceId: string): Promise<MissionWor
       }
     }
 
-    const { error } = await supabase
+    logDpaeDebug('update:payload', {
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      table: 'annonces',
+      where: { id: annonceId },
+      update: {
+        dpae_done: true,
+        dpae_status: 'confirmed',
+        dpae_done_at: dpaeTimestamp,
+        dpae_done_by: user?.id ?? null,
+      },
+      payload: dpaePayload,
+    })
+
+    const { data: annonceUpdateData, error, status } = await supabase
       .from('annonces')
       .update({
         dpae_done: true,
@@ -988,6 +1323,20 @@ export async function markMissionDpaeDone(annonceId: string): Promise<MissionWor
         dpae_payload_snapshot: dpaePayload,
       })
       .eq('id', annonceId)
+
+      .select('id, patron_id, etablissement_id, dpae_done, dpae_status, dpae_done_at, dpae_done_by')
+
+    logDpaeDebug('update:result', {
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      table: 'annonces',
+      where: { id: annonceId },
+      status,
+      rows_modified: Array.isArray(annonceUpdateData) ? annonceUpdateData.length : 0,
+      data: annonceUpdateData ?? null,
+      error: error ? getSupabaseErrorDebug(error) : null,
+    })
 
     if (error) {
       if (isMissingDpaeAuditSchemaError(error)) {
@@ -1000,29 +1349,165 @@ export async function markMissionDpaeDone(annonceId: string): Promise<MissionWor
           .eq('id', annonceId)
 
         if (fallbackError) {
+          logDpaeDebug('error:annonces_fallback_update', {
+            mission_id: annonceId,
+            patron_id: user?.id ?? null,
+            etablissement_id: snapshot.etablissement_id ?? null,
+            statut_dpae: snapshot.dpae_status ?? null,
+            pre_requis: {
+              has_engagement: Boolean(engagement),
+              engagement_status: snapshot.engagement_status ?? null,
+              agreement_confirmed: canCheckInWithEngagement(snapshot.engagement_status),
+            },
+            payload: dpaePayload,
+            error: getSupabaseErrorDebug(fallbackError),
+          })
           if (isMissingDpaeSchemaError(fallbackError)) {
+            logDpaeReturningError({
+              stage: 'blocked:missing_dpae_schema_fallback',
+              mission_id: annonceId,
+              patron_id: user?.id ?? null,
+              etablissement_id: snapshot.etablissement_id ?? null,
+              statut_dpae: snapshot.dpae_status ?? null,
+              payload: dpaePayload,
+              supabase: getSupabaseErrorDebug(fallbackError),
+              message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.',
+            })
             return { ok: false, reason: 'blocked', message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.' }
           }
-          return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
+          const message = getReadableDpaeErrorMessage(fallbackError, 'Impossible de confirmer la DPAE.')
+          logDpaeReturningError({
+            stage: 'error:annonces_fallback_update',
+            mission_id: annonceId,
+            patron_id: user?.id ?? null,
+            etablissement_id: snapshot.etablissement_id ?? null,
+            statut_dpae: snapshot.dpae_status ?? null,
+            payload: dpaePayload,
+            supabase: getSupabaseErrorDebug(fallbackError),
+            message,
+          })
+          return {
+            ok: false,
+            reason: 'update_failed',
+            message,
+          }
         }
 
         return { ok: true, changed: true }
       }
       if (isMissingDpaeSchemaError(error)) {
+        logDpaeReturningError({
+          stage: 'blocked:missing_dpae_schema',
+          mission_id: annonceId,
+          patron_id: user?.id ?? null,
+          etablissement_id: snapshot.etablissement_id ?? null,
+          statut_dpae: snapshot.dpae_status ?? null,
+          payload: dpaePayload,
+          supabase: getSupabaseErrorDebug(error),
+          message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.',
+        })
         return { ok: false, reason: 'blocked', message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.' }
       }
-      return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
+      logDpaeDebug('error:annonces_update', {
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        etablissement_id: snapshot.etablissement_id ?? null,
+        statut_dpae: snapshot.dpae_status ?? null,
+        pre_requis: {
+          has_engagement: Boolean(engagement),
+          engagement_status: snapshot.engagement_status ?? null,
+          agreement_confirmed: canCheckInWithEngagement(snapshot.engagement_status),
+        },
+        payload: dpaePayload,
+        error: getSupabaseErrorDebug(error),
+      })
+      const message = getReadableDpaeErrorMessage(error, 'Impossible de confirmer la DPAE.')
+      logDpaeReturningError({
+        stage: 'error:annonces_update',
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        etablissement_id: snapshot.etablissement_id ?? null,
+        statut_dpae: snapshot.dpae_status ?? null,
+        payload: dpaePayload,
+        supabase: getSupabaseErrorDebug(error),
+        message,
+      })
+      return {
+        ok: false,
+        reason: 'update_failed',
+        message,
+      }
     }
 
+    logDpaeDebug('success', {
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      statut_dpae: 'confirmed',
+      pre_requis: {
+        has_engagement: Boolean(engagement),
+        engagement_status: snapshot.engagement_status ?? null,
+        agreement_confirmed: canCheckInWithEngagement(snapshot.engagement_status),
+      },
+      payload: dpaePayload,
+    })
     return { ok: true, changed: true }
   } catch (error) {
+    logDpaeDebug('error:unexpected', {
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      statut_dpae: snapshot.dpae_status ?? null,
+      pre_requis: {
+        has_engagement: Boolean(engagement),
+        engagement_status: snapshot.engagement_status ?? null,
+        agreement_confirmed: canCheckInWithEngagement(snapshot.engagement_status),
+      },
+      payload: dpaePayload,
+      error: getSupabaseErrorDebug(error),
+    })
     if (isMissingDpaeAuditSchemaError(error)) {
+      logDpaeReturningError({
+        stage: 'blocked:missing_dpae_audit_schema',
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        etablissement_id: snapshot.etablissement_id ?? null,
+        statut_dpae: snapshot.dpae_status ?? null,
+        payload: dpaePayload,
+        supabase: getSupabaseErrorDebug(error),
+        message: 'Les champs de tracabilite DPAE doivent etre ajoutes en base avant de confirmer cette etape.',
+      })
       return { ok: false, reason: 'blocked', message: 'Les champs de tracabilite DPAE doivent etre ajoutes en base avant de confirmer cette etape.' }
     }
     if (isMissingDpaeSchemaError(error)) {
+      logDpaeReturningError({
+        stage: 'blocked:missing_dpae_schema_exception',
+        mission_id: annonceId,
+        patron_id: user?.id ?? null,
+        etablissement_id: snapshot.etablissement_id ?? null,
+        statut_dpae: snapshot.dpae_status ?? null,
+        payload: dpaePayload,
+        supabase: getSupabaseErrorDebug(error),
+        message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.',
+      })
       return { ok: false, reason: 'blocked', message: 'Le champ DPAE doit etre ajoute en base avant de marquer cette etape comme faite.' }
     }
-    return { ok: false, reason: 'update_failed', message: 'Impossible de confirmer la DPAE.' }
+    const message = getReadableDpaeErrorMessage(error, 'Impossible de confirmer la DPAE.')
+    logDpaeReturningError({
+      stage: 'error:unexpected',
+      mission_id: annonceId,
+      patron_id: user?.id ?? null,
+      etablissement_id: snapshot.etablissement_id ?? null,
+      statut_dpae: snapshot.dpae_status ?? null,
+      payload: dpaePayload,
+      supabase: getSupabaseErrorDebug(error),
+      message,
+    })
+    return {
+      ok: false,
+      reason: 'update_failed',
+      message,
+    }
   }
 }
 
@@ -1074,30 +1559,52 @@ export async function finalizeMissionActivation(annonceId: string): Promise<Miss
 export async function markMissionCheckOut(annonceId: string): Promise<MissionWorkflowResult> {
   const snapshot = await fetchMissionWorkflowSnapshot(annonceId)
   if (!snapshot) return { ok: false, reason: 'not_found' }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user?.id) return { ok: false, reason: 'invalid_status' }
   const checkOutBlockedMessage = getCheckOutBlockMessage(snapshot)
   if (checkOutBlockedMessage) {
     if (getMissionValidationSummary(snapshot).checkInStatus === 'checked_out') {
-      return { ok: true, changed: false }
+      return { ok: true, changed: false, stage: 'confirmed' }
     }
     return { ok: false, reason: 'blocked', message: checkOutBlockedMessage }
   }
   if (!canCheckOutMission(snapshot)) {
     if (getMissionValidationSummary(snapshot).checkInStatus === 'checked_out') {
-      return { ok: true, changed: false }
+      return { ok: true, changed: false, stage: 'confirmed' }
     }
     return { ok: false, reason: 'invalid_status' }
   }
 
   const nowIso = new Date().toISOString()
+  const requestedBy = snapshot.check_out_requested_by ?? null
+
+  if (!requestedBy) {
+    const { error } = await supabase
+      .from('annonces')
+      .update({
+        check_out_requested_by: user.id,
+        check_out_requested_at: nowIso,
+        check_out_confirmed_at: null,
+      })
+      .eq('id', annonceId)
+
+    if (error) return { ok: false, reason: 'update_failed' }
+    return { ok: true, changed: true, stage: 'pending_confirmation' }
+  }
+
+  if (requestedBy === user.id) {
+    return { ok: true, changed: false, stage: 'pending_confirmation' }
+  }
 
   const { error } = await supabase
     .from('annonces')
     .update({
       statut: 'completed',
       check_in_status: 'checked_out',
+      check_out_confirmed_at: nowIso,
       checked_out_at: nowIso,
-      payment_status: 'released',
-      payment_released_at: nowIso,
     })
     .eq('id', annonceId)
 
@@ -1109,7 +1616,8 @@ export async function markMissionCheckOut(annonceId: string): Promise<MissionWor
       completed_at: nowIso,
     })
   }
-  return { ok: true, changed: true }
+  await captureMissionPaymentIfNeeded(annonceId)
+  return { ok: true, changed: true, stage: 'confirmed' }
 }
 
 export async function openMissionDispute(
@@ -1180,6 +1688,9 @@ export async function openUrgentMissionReplacement(
       check_in_status: 'not_checked_in',
       checked_in_at: null,
       checked_out_at: null,
+      check_out_requested_by: null,
+      check_out_requested_at: null,
+      check_out_confirmed_at: null,
       dispute_reason: null,
       dispute_created_at: null,
       cancelled_at: null,

@@ -9,8 +9,8 @@ const C = {
   title: '#181511',
   text: '#5D554C',
   muted: '#9A8C7E',
-  terra: '#C46A3C',
-  terraDark: '#9F542D',
+  terra: '#1F6B45',
+  terraDark: '#184F34',
   shadow: '#2B2118',
 }
 
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.8,
-    color: C.muted,
+    color: C.terra,
     marginBottom: 14,
   },
   title: {
@@ -158,13 +158,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   secondaryButton: {
-    backgroundColor: '#FFF8F2',
+    backgroundColor: '#F4FBF7',
     borderRadius: 20,
     paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E7C9B4',
+    borderColor: '#BFD8C9',
   },
   secondaryButtonText: {
     color: C.terraDark,

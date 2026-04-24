@@ -61,26 +61,26 @@ export function getWorkerInterestLabel(snapshot: MissionApplicationSnapshot): st
   const initiateur = String(snapshot.initiateur ?? '').toLowerCase()
 
   if (initiateur === 'patron') {
-    if (status === 'selected') return 'Selectionne par le patron'
-    if (status === 'pending') return 'Mission proposee'
+    if (status === 'selected') return 'Retenue'
+    if (status === 'pending') return 'Proposée'
   } else {
-    if (status === 'selected') return 'Profil retenu'
-    if (status === 'pending') return 'Intérêt envoyé'
+    if (status === 'selected') return 'Retenue'
+    if (status === 'pending') return 'Candidature envoyée'
   }
 
-  if (status === 'declined') return 'Refuse'
-  if (status === 'expired') return 'Expire'
-  if (status === 'cancelled') return 'Annule'
-  return 'En attente'
+  if (status === 'declined') return 'Refusée'
+  if (status === 'expired') return 'Expirée'
+  if (status === 'cancelled') return 'Annulée'
+  return 'Proposée'
 }
 
 export function getPatronApplicationLabel(snapshot: MissionApplicationSnapshot): string {
   const status = normalizeMissionApplicationStatus(snapshot.statut)
-  if (status === 'selected') return 'Profil sélectionné'
-  if (status === 'declined') return 'Profil refuse'
-  if (status === 'expired') return 'Profil expire'
-  if (status === 'cancelled') return 'Mission annulee'
-  return 'Intérêt à traiter'
+  if (status === 'selected') return 'Retenue'
+  if (status === 'declined') return 'Refusée'
+  if (status === 'expired') return 'Expirée'
+  if (status === 'cancelled') return 'Annulée'
+  return 'Proposée'
 }
 
 export function isWorkerEligibleForMatching(worker: WorkerMatchingSnapshot): boolean {
@@ -114,28 +114,28 @@ export function getMissionEngagementStage(snapshot: MissionValidationSnapshot): 
   const status = normalizeMissionStatus(snapshot.statut)
   const summary = getMissionValidationSummary(snapshot)
 
-  if (status === 'open') return 'Mission ouverte'
-  if (status === 'expired') return 'Mission expiree'
-  if (status === 'cancelled_by_patron' || status === 'cancelled_by_server') return 'Mission annulee'
+  if (status === 'open') return 'En attente'
+  if (status === 'expired') return 'Annulée'
+  if (status === 'cancelled_by_patron' || status === 'cancelled_by_server') return 'Annulée'
   if (status === 'no_show') return 'Serveur absent'
-  if (status === 'completed') return 'Mission terminee'
+  if (status === 'completed') return 'Terminée'
   if (status === 'dispute') return 'Litige ouvert'
 
   switch (summary.operationalState) {
     case 'waiting_validation':
-      return 'En attente de validation'
+      return 'Confirmée'
     case 'mission_confirmed':
-      return 'Mission confirmee'
+      return 'Confirmée'
     case 'administrative_pending':
-      return 'Administratif a finaliser'
+      return 'Confirmée'
     case 'ready_for_check_in':
-      return 'Prete pour check-in'
+      return 'Confirmée'
     case 'in_progress':
       return 'En cours'
     case 'completed':
-      return 'Mission terminee'
+      return 'Terminée'
     default:
-      return 'Mission confirmee'
+      return 'Confirmée'
   }
 }
 
@@ -145,5 +145,5 @@ export function canOpenUrgentReplacement(snapshot: MissionValidationSnapshot): b
 }
 
 export function getUrgentReplacementRule(): string {
-  return 'Un remplacement urgent doit creer un nouvel engagement et un nouveau contrat, sans ecraser le premier serveur rattache a la mission.'
+  return 'Un remplacement urgent doit créer un nouvel engagement et un nouveau contrat, sans écraser le premier serveur rattaché à la mission.'
 }

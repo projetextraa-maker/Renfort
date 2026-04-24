@@ -78,9 +78,13 @@ export type ContractRecord = {
   patron_signed_at: string | null
   patron_signed_by_user_id?: string | null
   patron_sign_role?: string | null
+  patron_signature_ip?: string | null
+  patron_signature_user_agent?: string | null
   worker_signed_at: string | null
   worker_signed_by_user_id?: string | null
   worker_sign_role?: string | null
+  worker_signature_ip?: string | null
+  worker_signature_user_agent?: string | null
   cancelled_at: string | null
   template_version: string | null
   payload_snapshot: ContractPayloadSnapshot
@@ -101,9 +105,13 @@ type RawContractRecord = {
   patron_signed_at?: string | null
   patron_signed_by_user_id?: string | null
   patron_sign_role?: string | null
+  patron_signature_ip?: string | null
+  patron_signature_user_agent?: string | null
   worker_signed_at?: string | null
   worker_signed_by_user_id?: string | null
   worker_sign_role?: string | null
+  worker_signature_ip?: string | null
+  worker_signature_user_agent?: string | null
   cancelled_at?: string | null
   template_version?: string | null
   payload_snapshot?: ContractPayloadSnapshot
@@ -124,9 +132,13 @@ export const CONTRACT_COMPAT_SELECT = `
   patron_signed_at,
   patron_signed_by_user_id,
   patron_sign_role,
+  patron_signature_ip,
+  patron_signature_user_agent,
   worker_signed_at,
   worker_signed_by_user_id,
   worker_sign_role,
+  worker_signature_ip,
+  worker_signature_user_agent,
   cancelled_at,
   template_version,
   payload_snapshot,
@@ -224,9 +236,13 @@ function normalizeContractRecord(raw: RawContractRecord | null | undefined): Con
     patron_signed_at: raw.patron_signed_at ?? null,
     patron_signed_by_user_id: raw.patron_signed_by_user_id ?? null,
     patron_sign_role: raw.patron_sign_role ?? null,
+    patron_signature_ip: raw.patron_signature_ip ?? null,
+    patron_signature_user_agent: raw.patron_signature_user_agent ?? null,
     worker_signed_at: raw.worker_signed_at ?? null,
     worker_signed_by_user_id: raw.worker_signed_by_user_id ?? null,
     worker_sign_role: raw.worker_sign_role ?? null,
+    worker_signature_ip: raw.worker_signature_ip ?? null,
+    worker_signature_user_agent: raw.worker_signature_user_agent ?? null,
     cancelled_at: raw.cancelled_at ?? null,
     template_version: raw.template_version ?? null,
     payload_snapshot: raw.payload_snapshot ?? null,
@@ -342,8 +358,6 @@ async function syncLegacyContractState(input: {
   if (input.contract.generated_at) annoncePatch.contract_generated_at = input.contract.generated_at
   if (input.contract.patron_signed_at) {
     annoncePatch.contract_signed_by_patron_at = input.contract.patron_signed_at
-    annoncePatch.payment_status = 'authorized_hold'
-    annoncePatch.payment_authorized_at = input.contract.patron_signed_at
   }
   if (input.contract.worker_signed_at) {
     annoncePatch.contract_signed_by_server_at = input.contract.worker_signed_at
@@ -378,11 +392,52 @@ async function syncLegacyContractState(input: {
         ...engagementPatch,
       })
       .eq('id', input.engagement.id)
+
+    console.log('mission payment trigger attempt', input.engagement.mission_id)
+    void triggerMissionPaymentAuthorizationIfNeeded(input.engagement.mission_id)
   } else {
     await supabase
       .from('engagements')
       .update(engagementPatch)
       .eq('id', input.engagement.id)
+  }
+}
+
+async function triggerMissionPaymentAuthorizationIfNeeded(missionId: string): Promise<void> {
+  try {
+    const { data: mission, error: missionError } = await supabase
+      .from('annonces')
+      .select('id, payment_intent_id')
+      .eq('id', missionId)
+      .maybeSingle()
+
+    if (missionError) {
+      console.log('mission payment trigger read failed', {
+        missionId,
+        error: missionError.message,
+      })
+      return
+    }
+
+    if (!mission?.id || mission.payment_intent_id) {
+      return
+    }
+
+    const { data, error } = await supabase.functions.invoke('stripe-create-mission-payment-intent', {
+      body: { missionId },
+    })
+
+    if (error || data?.error) {
+      console.log('mission payment trigger failed', {
+        missionId,
+        error: error?.message ?? data?.error ?? null,
+      })
+    }
+  } catch (error: any) {
+    console.log('mission payment trigger unexpected error', {
+      missionId,
+      error: error?.message ?? String(error),
+    })
   }
 }
 
@@ -683,11 +738,52 @@ async function signContractInternal(
 }
 
 export async function signContractAsPatron(engagementId: string): Promise<ContractActionResult> {
-  return signContractInternal(engagementId, 'patron')
+  return signContractWithAudit(engagementId, 'patron')
 }
 
 export async function signContractAsWorker(engagementId: string): Promise<ContractActionResult> {
-  return signContractInternal(engagementId, 'worker')
+  return signContractWithAudit(engagementId, 'worker')
+}
+
+async function signContractWithAudit(
+  engagementId: string,
+  actor: 'patron' | 'worker'
+): Promise<ContractActionResult> {
+  const engagement = await fetchEngagementById(engagementId)
+  if (!engagement) {
+    return { ok: false, reason: 'not_found', message: 'Aucun engagement trouvé.' }
+  }
+
+  const contractResult = await createDraftContractForEngagement(engagementId)
+  if (!contractResult.ok) return contractResult
+  const contract = contractResult.contract
+
+  if (!contract.payload_snapshot) {
+    return { ok: false, reason: 'blocked', message: 'Le contrat ne peut pas être signé sans snapshot métier.' }
+  }
+
+  const { data, error } = await supabase.functions.invoke('contract-sign-with-audit', {
+    body: {
+      engagementId,
+      actor,
+    },
+  })
+
+  if (error || data?.error) {
+    return {
+      ok: false,
+      reason: 'update_failed',
+      message: data?.error ?? error?.message ?? "Impossible d'enregistrer cette signature.",
+    }
+  }
+
+  const updatedContract = await getContractForEngagement(engagement.id)
+  if (!updatedContract) {
+    return { ok: false, reason: 'update_failed', message: 'La signature a été enregistrée mais la lecture du contrat a échoué.' }
+  }
+
+  await syncLegacyContractState({ contract: updatedContract, engagement })
+  return { ok: true, contract: updatedContract, changed: Boolean(data?.changed ?? true) }
 }
 
 export async function cancelContract(

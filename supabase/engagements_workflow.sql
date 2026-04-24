@@ -17,6 +17,9 @@ create table if not exists public.engagements (
   updated_at timestamptz not null default now()
 );
 
+alter table public.engagements
+  add column if not exists agreed_hourly_rate numeric(10,2) null;
+
 alter table public.demandes
   add column if not exists replacement_for_engagement_id uuid references public.engagements(id) on delete set null;
 
@@ -69,7 +72,7 @@ create policy "engagements_insert_own"
 on public.engagements
 for insert
 to authenticated
-with check (auth.uid() = patron_id);
+with check (auth.uid() = patron_id or auth.uid() = serveur_id);
 
 drop policy if exists "engagements_update_own" on public.engagements;
 create policy "engagements_update_own"

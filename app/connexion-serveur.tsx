@@ -12,8 +12,8 @@ const C = {
   title: '#181511',
   text: '#5D554C',
   muted: '#9A8C7E',
-  terra: '#C46A3C',
-  terraDark: '#9F542D',
+  terra: '#1F6B45',
+  terraDark: '#184F34',
   shadow: '#2B2118',
 }
 
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 24, paddingTop: 58, paddingBottom: 36 },
   back: { alignSelf: 'flex-start', marginBottom: 18 },
   backText: { fontSize: 15, color: C.terra, fontWeight: '700' },
-  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.6, color: C.muted, marginBottom: 12 },
+  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.6, color: C.terra, marginBottom: 12 },
   title: { fontSize: 34, lineHeight: 40, fontWeight: '900', color: C.title, letterSpacing: -0.9, marginBottom: 12 },
   subtitle: { fontSize: 16, lineHeight: 24, color: C.text, marginBottom: 24, maxWidth: 320 },
   card: {

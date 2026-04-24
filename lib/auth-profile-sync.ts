@@ -45,6 +45,54 @@ function normalizeRole(metadataRole: unknown): SupportedRole | null {
   return metadataRole === 'patron' || metadataRole === 'serveur' ? metadataRole : null
 }
 
+async function resolveStoredRoleForUser(userId: string): Promise<SupportedRole | null> {
+  const [
+    { data: patronRow, error: patronError },
+    { data: serveurRow, error: serveurError },
+  ] = await Promise.all([
+    supabase.from('patrons').select('id').eq('id', userId).maybeSingle(),
+    supabase.from('serveurs').select('id').eq('id', userId).maybeSingle(),
+  ])
+
+  if (patronError) {
+    console.error('resolveStoredRoleForUser patron fetch error', patronError)
+    return null
+  }
+
+  if (serveurError) {
+    console.error('resolveStoredRoleForUser serveur fetch error', serveurError)
+    return null
+  }
+
+  if (serveurRow?.id) return 'serveur'
+  if (patronRow?.id) return 'patron'
+  return null
+}
+
+async function repairUserAccountRoleMetadata(user: User, role: SupportedRole): Promise<void> {
+  const currentRole = normalizeRole(user.user_metadata?.account_role)
+  if (currentRole === role) return
+
+  const nextMetadata = {
+    ...(user.user_metadata ?? {}),
+    account_role: role,
+  }
+
+  const { error } = await supabase.auth.updateUser({
+    data: nextMetadata,
+  })
+
+  if (error) {
+    console.warn('repairUserAccountRoleMetadata failed', {
+      userId: user.id,
+      role,
+      message: getErrorMessage(error),
+    })
+  } else {
+    console.log('repairUserAccountRoleMetadata success', { userId: user.id, role })
+  }
+}
+
 function toNullableString(value: unknown) {
   const normalized = String(value ?? '').trim()
   return normalized.length > 0 ? normalized : null
@@ -201,10 +249,15 @@ async function ensureServeurProfile(user: User, metadata: ServeurMetadata): Prom
 export async function ensureAccountProfileForUser(user: User | null | undefined): Promise<SyncResult> {
   if (!user) return { ok: false, reason: 'missing_user' }
 
-  const role = normalizeRole(user.user_metadata?.account_role)
-  if (!role) return { ok: false, reason: 'missing_role' }
+  const metadataRole = normalizeRole(user.user_metadata?.account_role)
+  const resolvedRole = metadataRole ?? await resolveStoredRoleForUser(user.id)
+  if (!resolvedRole) return { ok: false, reason: 'missing_role' }
 
-  return role === 'patron'
+  if (!metadataRole) {
+    await repairUserAccountRoleMetadata(user, resolvedRole)
+  }
+
+  return resolvedRole === 'patron'
     ? ensurePatronProfile(user, user.user_metadata as PatronMetadata)
     : ensureServeurProfile(user, user.user_metadata as ServeurMetadata)
 }
@@ -212,7 +265,7 @@ export async function ensureAccountProfileForUser(user: User | null | undefined)
 export async function inspectAccountStateForUser(user: User | null | undefined) {
   if (!user) return { ok: false as const, reason: 'missing_user' }
 
-  const role = normalizeRole(user.user_metadata?.account_role)
+  const metadataRole = normalizeRole(user.user_metadata?.account_role)
   const [
     { data: patronRow, error: patronError },
     { data: serveurRow, error: serveurError },
@@ -232,10 +285,12 @@ export async function inspectAccountStateForUser(user: User | null | undefined) 
   }
 
   const etablissements = patronRow?.id ? await fetchEtablissementsForPatron(user.id) : []
+  const resolvedRole = metadataRole ?? (serveurRow?.id ? 'serveur' : patronRow?.id ? 'patron' : null)
 
   return {
     ok: true as const,
-    role,
+    role: resolvedRole,
+    metadataRole,
     patronExists: Boolean(patronRow?.id),
     serveurExists: Boolean(serveurRow?.id),
     etablissementCount: etablissements.length,

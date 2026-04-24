@@ -19,7 +19,11 @@ function createAdminClient() {
 function resolvePlanFromPrice(priceId: string | null | undefined) {
   if (!priceId) return 'none'
   if (priceId === (Deno.env.get('STRIPE_PRICE_PRO_MONTHLY') ?? '')) return 'pro'
+  if (priceId === (Deno.env.get('STRIPE_PRICE_PRO_SEMIANNUAL') ?? '')) return 'pro'
+  if (priceId === (Deno.env.get('STRIPE_PRICE_PRO_ANNUAL') ?? '')) return 'pro'
   if (priceId === (Deno.env.get('STRIPE_PRICE_PRO_PLUS_MONTHLY') ?? '')) return 'pro_plus'
+  if (priceId === (Deno.env.get('STRIPE_PRICE_PRO_PLUS_SEMIANNUAL') ?? '')) return 'pro_plus'
+  if (priceId === (Deno.env.get('STRIPE_PRICE_PRO_PLUS_ANNUAL') ?? '')) return 'pro_plus'
   return 'none'
 }
 
@@ -29,6 +33,7 @@ async function upsertBillingState(admin: ReturnType<typeof createAdminClient>, p
   subscriptionId?: string | null
   priceId?: string | null
   status?: string | null
+  cancelAtPeriodEnd?: boolean | null
   currentPeriodEnd?: number | null
 }) {
   const plan = normalizePatronPlan(resolvePlanFromPrice(params.priceId))
@@ -40,6 +45,7 @@ async function upsertBillingState(admin: ReturnType<typeof createAdminClient>, p
     stripe_subscription_id: params.subscriptionId ?? null,
     stripe_price_id: params.priceId ?? null,
     stripe_status: params.status ?? null,
+    cancel_at_period_end: Boolean(params.cancelAtPeriodEnd),
     current_plan: subscriptionActive ? plan : 'none',
     current_period_end: params.currentPeriodEnd ? new Date(params.currentPeriodEnd * 1000).toISOString() : null,
   })
@@ -48,6 +54,8 @@ async function upsertBillingState(admin: ReturnType<typeof createAdminClient>, p
     .from('patrons')
     .update({
       abonnement: subscriptionActive ? plan : null,
+      cancel_at_period_end: Boolean(params.cancelAtPeriodEnd),
+      current_period_end: params.currentPeriodEnd ? new Date(params.currentPeriodEnd * 1000).toISOString() : null,
     })
     .eq('id', params.patronId)
 }
@@ -98,6 +106,7 @@ serve(async (req) => {
           subscriptionId: subscription.id,
           priceId: item?.price?.id ?? null,
           status: subscription.status,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
           currentPeriodEnd: subscription.current_period_end,
         })
       }
@@ -114,6 +123,7 @@ serve(async (req) => {
           subscriptionId: subscription.id,
           priceId: item?.price?.id ?? null,
           status: subscription.status,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
           currentPeriodEnd: subscription.current_period_end,
         })
       }
@@ -129,6 +139,7 @@ serve(async (req) => {
           subscriptionId: subscription.id,
           priceId: null,
           status: subscription.status,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
           currentPeriodEnd: null,
         })
       }

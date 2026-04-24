@@ -1,11 +1,12 @@
 import { useFocusEffect, useRouter } from 'expo-router'
 import React, { useCallback, useState } from 'react'
-import { Alert, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Modal, Platform, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from 'react-native'
 import PatronBottomNav from '../components/PatronBottomNav'
-import { ANNONCE_COMPAT_WITH_WORKFLOW_SELECT, normalizeAnnonceRecords, type NormalizedAnnonceRecord } from '../lib/annonce-read'
+import { ANNONCE_COMPAT_SELECT, ANNONCE_COMPAT_WITH_WORKFLOW_SELECT, normalizeAnnonceRecords, type NormalizedAnnonceRecord } from '../lib/annonce-read'
 import { cancelConfirmedAnnonce, markMissionCheckIn, markMissionCheckOut, markMissionDpaeDone, openUrgentMissionReplacement, syncAnnoncesInProgress, updateAnnonceLifecycleStatus } from '../lib/annonces'
 import { fetchContractMapForEngagements, getContractWarnings, type ContractRecord } from '../lib/contracts'
 import { EURO } from '../lib/currency'
+import { saveEvaluation } from '../lib/evaluations'
 import { fetchEtablissementNameMapByIds } from '../lib/etablissements'
 import { fetchEngagementMapForMissions, getEngagementStatusLabel, getEngagementWarnings, type EngagementRecord } from '../lib/engagements'
 import { isActiveMissionStatus, normalizeMissionStatus, parseMissionDateTime } from '../lib/missions'
@@ -29,12 +30,22 @@ type MissionPatron = Pick<
   | 'presence_confirmation_status'
   | 'contract_status'
   | 'payment_status'
+  | 'launch_offer_applied'
   | 'check_in_status'
   | 'dpae_done'
   | 'dpae_status'
   | 'checked_in_at'
   | 'checked_out_at'
+  | 'check_out_requested_by'
+  | 'check_out_requested_at'
+  | 'check_out_confirmed_at'
 >
+
+type RatingModalState = {
+  missionId: string
+  serveurId: string
+  serveurNom: string
+} | null
 
 const C = {
   bg: '#F7F4EE',
@@ -79,10 +90,10 @@ function getMissionBadge(mission: MissionPatron) {
   }
 
   return {
-    label: 'A venir',
-    bg: C.terraBg,
-    border: C.terraBd,
-    color: C.terraDark,
+    label: 'Confirmée',
+    bg: C.greenBg,
+    border: C.greenBd,
+    color: C.green,
   }
 }
 
@@ -115,11 +126,16 @@ function buildMissionValidationSnapshot(
 export default function MissionsPatron() {
   const router = useRouter()
   const [missions, setMissions] = useState<MissionPatron[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [serveurs, setServeurs] = useState<Record<string, string>>({})
   const [etablissementNames, setEtablissementNames] = useState<Record<string, string>>({})
   const [engagements, setEngagements] = useState<Record<string, EngagementRecord>>({})
   const [contracts, setContracts] = useState<Record<string, ContractRecord>>({})
   const [refreshing, setRefreshing] = useState(false)
+  const [ratingModal, setRatingModal] = useState<RatingModalState>(null)
+  const [ratingNote, setRatingNote] = useState(0)
+  const [ratingComment, setRatingComment] = useState('')
+  const [ratingLoading, setRatingLoading] = useState(false)
 
   const chargerDonnees = useCallback(async () => {
     const {
@@ -130,17 +146,42 @@ export default function MissionsPatron() {
       router.replace('/')
       return
     }
+    setCurrentUserId(user.id)
 
-      const { data, error } = await supabase
+    let annoncesRows: any[] | null = null
+    const { data: workflowData, error: workflowError } = await supabase
       .from('annonces')
       .select(ANNONCE_COMPAT_WITH_WORKFLOW_SELECT)
       .eq('patron_id', user.id)
       .order('date', { ascending: true })
       .order('heure_debut', { ascending: true })
 
-    if (error || !data) return
+    if (workflowError && /check_in_status|checked_in_at|checked_out_at|check_out_requested_|check_out_confirmed_at|dpae_|contract_status|payment_status|launch_offer_applied/i.test(String(workflowError.message ?? ''))) {
+      const { data: compatData, error: compatError } = await supabase
+        .from('annonces')
+        .select(ANNONCE_COMPAT_SELECT)
+        .eq('patron_id', user.id)
+        .order('date', { ascending: true })
+        .order('heure_debut', { ascending: true })
 
-    const trackedMissions = normalizeAnnonceRecords(data as any[]).filter((mission) => isActiveMissionStatus(mission.statut)) as MissionPatron[]
+      if (compatError) return
+
+      annoncesRows = (compatData ?? []).map((item: any) => ({
+        ...item,
+        checked_out_at: null,
+        check_out_requested_by: null,
+        check_out_requested_at: null,
+        check_out_confirmed_at: null,
+        launch_offer_applied: false,
+      }))
+    } else if (!workflowError) {
+      annoncesRows = workflowData ?? null
+    }
+
+    if (!annoncesRows) return
+
+    const normalizedRows = normalizeAnnonceRecords(annoncesRows as any[])
+    const trackedMissions = normalizedRows.filter((mission) => isActiveMissionStatus(mission.statut)) as MissionPatron[]
 
     const progressedMissionIds = await syncAnnoncesInProgress(trackedMissions)
 
@@ -167,11 +208,18 @@ export default function MissionsPatron() {
 
     const missionsWithDpae = normalizedMissions.map((mission) => ({
       ...mission,
-      dpae_done: Object.prototype.hasOwnProperty.call(dpaeMap, mission.id) ? dpaeMap[mission.id] : false,
-      dpae_status: Object.prototype.hasOwnProperty.call(dpaeStatusMap, mission.id) ? dpaeStatusMap[mission.id] : 'not_started',
+      dpae_done: Object.prototype.hasOwnProperty.call(dpaeMap, mission.id) ? dpaeMap[mission.id] : (mission.dpae_done ?? false),
+      dpae_status: Object.prototype.hasOwnProperty.call(dpaeStatusMap, mission.id) ? dpaeStatusMap[mission.id] : (mission.dpae_status ?? 'not_started'),
     }))
 
-    setMissions(missionsWithDpae)
+    const missionsDashboard = missionsWithDpae.filter((mission) => isActiveMissionStatus(mission.statut))
+    const missionsFiltered = missionsDashboard.filter((mission) => isActiveMissionStatus(mission.statut))
+
+    console.log('missions dashboard', missionsDashboard.length)
+    console.log('missions onglet', missionsFiltered.length)
+    console.log('missions statuts', missionsWithDpae.map((mission) => mission.statut))
+
+    setMissions(missionsDashboard)
     setEtablissementNames(await fetchEtablissementNameMapByIds(
       missionsWithDpae.map((mission) => mission.etablissement_id).filter(Boolean) as string[]
     ))
@@ -208,6 +256,8 @@ export default function MissionsPatron() {
     await chargerDonnees()
     setRefreshing(false)
   }, [chargerDonnees])
+
+  const missionsEnCours = missions.filter((mission) => isActiveMissionStatus(mission.statut))
 
   const syncServeurOutcomeStats = useCallback(async (serveurId: string | null | undefined) => {
     if (!serveurId) return
@@ -374,15 +424,100 @@ export default function MissionsPatron() {
               return
             }
             await chargerDonnees()
+            if (result.stage === 'pending_confirmation') {
+              Alert.alert('Check-out demandé', 'Le check-out est en attente de confirmation par l’autre partie.')
+              return
+            }
+            if (mission.serveur_id) {
+              setRatingModal({
+                missionId: mission.id,
+                serveurId: mission.serveur_id,
+                serveurNom: serveurs[mission.serveur_id] ?? 'le serveur',
+              })
+              setRatingNote(0)
+              setRatingComment('')
+              setRatingLoading(false)
+            }
           },
         },
       ])
     },
-    [chargerDonnees]
+    [chargerDonnees, serveurs]
   )
 
+  const closeRatingModal = useCallback(() => {
+    if (ratingLoading) return
+    setRatingModal(null)
+    setRatingNote(0)
+    setRatingComment('')
+    setRatingLoading(false)
+  }, [ratingLoading])
+
+  const submitRating = useCallback(async () => {
+    if (!ratingModal || ratingNote === 0) {
+      Alert.alert('Erreur', 'Veuillez choisir une note')
+      return
+    }
+
+    setRatingLoading(true)
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('User not found')
+      }
+
+      await saveEvaluation({
+        serveurId: ratingModal.serveurId,
+        missionId: ratingModal.missionId,
+        patronId: user.id,
+        note: ratingNote,
+        commentaire: ratingComment,
+      })
+
+      await supabase
+        .from('annonces')
+        .update({ note: ratingNote })
+        .eq('id', ratingModal.missionId)
+
+      await chargerDonnees()
+      closeRatingModal()
+      Alert.alert('Succes', 'Note enregistree')
+    } catch (error) {
+      console.error('missions patron submitRating error', error)
+      Alert.alert('Erreur', 'Le check-out est bien enregistre, mais la note n a pas pu etre sauvegardee.')
+      setRatingLoading(false)
+    }
+  }, [chargerDonnees, closeRatingModal, ratingComment, ratingModal, ratingNote])
+
   const handleMarkDpaeDone = useCallback(
-    (missionId: string) => {
+    async (mission: MissionPatron, missionSummary: ReturnType<typeof getMissionValidationSummary>, dpaeBlockMessage: string | null) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      console.log('mission dpae ui debug', {
+        mission_id: mission.id,
+        patron_id: user?.id ?? null,
+        etablissement_id: mission.etablissement_id ?? null,
+        statut_mission: mission.statut ?? null,
+        statut_dpae: mission.dpae_status ?? null,
+        dpae_done: mission.dpae_done ?? null,
+        pre_requis: {
+          agreement_confirmed: missionSummary.isAgreementConfirmed,
+          contract_status: missionSummary.contractStatus,
+          contract_display: missionSummary.contractDisplayLabel,
+        },
+        blocked_message: dpaeBlockMessage,
+      })
+
+      if (dpaeBlockMessage) {
+        Alert.alert('Déclaration URSSAF indisponible', dpaeBlockMessage)
+        return
+      }
+
       Alert.alert('Declaration URSSAF', 'La declaration URSSAF doit etre realisee hors application par le patron avant le debut de mission. Confirmez ici uniquement si elle a bien ete effectuee.', [
         { text: 'Retour', style: 'cancel' },
         {
@@ -391,7 +526,7 @@ export default function MissionsPatron() {
             router.push({
               pathname: '/contrat-engagement',
               params: {
-                annonceId: missionId,
+                annonceId: mission.id,
               },
             })
           },
@@ -399,9 +534,13 @@ export default function MissionsPatron() {
         {
           text: 'Confirmer la declaration',
           onPress: async () => {
-            const result = await markMissionDpaeDone(missionId)
+            const result = await markMissionDpaeDone(mission.id)
             if (!result.ok) {
-              Alert.alert('Impossible de confirmer la DPAE.', result.message ?? 'Une erreur est survenue.')
+              const backendMessage = result.message?.trim() || 'Impossible de confirmer la DPAE.'
+              if (__DEV__ && Platform.OS === 'android') {
+                ToastAndroid.show(backendMessage, ToastAndroid.LONG)
+              }
+              Alert.alert('Impossible de confirmer la DPAE.', backendMessage)
               return
             }
             await chargerDonnees()
@@ -449,60 +588,96 @@ export default function MissionsPatron() {
     const checkInBlockMessage = getCheckInBlockMessage(validationSnapshot)
     const checkOutBlockMessage = getCheckOutBlockMessage(validationSnapshot)
     const replacementBlockMessage = getUrgentReplacementBlockMessage(validationSnapshot)
+    const hasCheckedIn = Boolean(validationSnapshot.engagement_checked_in_at)
+    const hasCheckedOut = Boolean(validationSnapshot.engagement_checked_out_at)
+    const checkOutRequestedByMe = Boolean(currentUserId && mission.check_out_requested_by === currentUserId)
+    const checkOutRequestedByOther = Boolean(mission.check_out_requested_by && !checkOutRequestedByMe)
+    const checkOutActionLabel = checkOutRequestedByOther
+      ? 'Confirmer le check-out'
+      : checkOutRequestedByMe
+        ? 'En attente de confirmation'
+        : 'Demander le check-out'
     const warnings = [
       ...getEngagementWarnings(engagement ?? null),
       ...getContractWarnings(contract, engagement ?? null),
       ...getMissionLifecycleIssues(validationSnapshot),
     ]
-    const actionInfoMessages = [
-      checkInBlockMessage && !engagement?.checked_in_at ? checkInBlockMessage : null,
-      checkOutBlockMessage && Boolean(engagement?.checked_in_at) && !engagement?.checked_out_at ? checkOutBlockMessage : null,
+    const dpaeBlockMessage = missionSummary.dpaeDone
+      ? null
+      : !missionSummary.isAgreementConfirmed
+        ? 'La mission doit etre confirmee avant de finaliser la DPAE.'
+        : null
+    const actionInfoMessages = Array.from(new Set([
+      ...(!missionSummary.isAgreementConfirmed
+        ? missionSummary.contractualizationBlockers
+        : missionSummary.administrativeBlockers),
+      checkInBlockMessage && !hasCheckedIn ? checkInBlockMessage : null,
+      checkOutBlockMessage && hasCheckedIn && !hasCheckedOut ? checkOutBlockMessage : null,
       replacementBlockMessage,
-    ].filter(Boolean) as string[]
-    const canShowCheckInAction = !engagement?.checked_in_at && !engagement?.checked_out_at
-    const canShowCheckOutAction = Boolean(engagement?.checked_in_at) && !engagement?.checked_out_at
-    const canShowCompleteAction = Boolean(engagement?.checked_out_at)
-    const shouldShowDpaeAction =
-      missionSummary.missionStatusValue === 'admin_pending' ||
-      (missionSummary.isAgreementConfirmed && !missionSummary.dpaeDone)
+    ].filter(Boolean) as string[]))
+    const canShowCheckInAction = !hasCheckedIn && !hasCheckedOut
+    const canShowCheckOutAction = hasCheckedIn && !hasCheckedOut
+    const canShowCompleteAction = hasCheckedOut
+    const canExecuteDpaeAction = !missionSummary.dpaeDone && !dpaeBlockMessage
     const dpaeTone = missionSummary.dpaeDone
       ? { bg: C.greenBg, border: C.greenBd, text: C.green }
-      : { bg: C.terraBg, border: C.terraBd, text: C.terraDark }
-    const dpaeLabel = missionSummary.dpaeDone ? 'URSSAF confirmee' : 'URSSAF a finaliser'
+      : missionSummary.isAgreementConfirmed
+        ? { bg: C.terraBg, border: C.terraBd, text: C.terraDark }
+        : { bg: C.cardWarm, border: C.borderSoft, text: C.softDark }
+    const dpaeLabel = missionSummary.dpaeDone
+      ? 'URSSAF confirmée'
+      : missionSummary.isAgreementConfirmed
+        ? 'URSSAF à finaliser'
+        : 'En attente de confirmation'
+    const launchOfferApplied =
+      mission.payment_status === 'captured' &&
+      mission.launch_offer_applied === true
     const shouldShowContractAction =
       missionSummary.isAgreementConfirmed &&
-      missionSummary.contractDisplayLabel !== 'Signe' &&
+      missionSummary.contractDisplayLabel !== 'Contrat signé' &&
       Boolean(engagement)
+    const isPrimaryDpaeAction = !shouldShowContractAction && canExecuteDpaeAction
+    const canCancelMission = missionSummary.missionStatusValue === 'pending' && !missionSummary.isAgreementConfirmed
+    const contractPatronDone =
+      missionSummary.contractStatus === 'signed_by_patron' ||
+      missionSummary.contractStatus === 'signed_by_server' ||
+      missionSummary.contractStatus === 'fully_signed'
+    const contractServeurDone =
+      missionSummary.contractStatus === 'signed_by_server' ||
+      missionSummary.contractStatus === 'fully_signed'
     const checklistItems = [
       {
         label: 'Contrat employeur',
-        done: !missionSummary.checkInBlockers.includes('contract_patron_signature_missing'),
+        done: contractPatronDone,
       },
       {
         label: 'Contrat serveur',
-        done: !missionSummary.checkInBlockers.includes('contract_worker_signature_missing'),
+        done: contractServeurDone,
       },
       {
-        label: 'DPAE confirmee',
-        done: !missionSummary.checkInBlockers.includes('dpae_not_confirmed'),
+        label: 'DPAE confirmée',
+        done: missionSummary.dpaeDone,
       },
       {
-        label: 'Mission prete',
-        done: missionSummary.isReadyForCheckIn,
+        label: 'Prête au démarrage',
+        done:
+          missionSummary.isReadyForCheckIn ||
+          missionSummary.missionStatusValue === 'active' ||
+          missionSummary.missionStatusValue === 'completed',
       },
     ]
     const primaryAction = shouldShowContractAction ? (
       <TouchableOpacity style={s.primaryAction} onPress={() => handleViewContract(mission.id, engagement?.id)} activeOpacity={0.88}>
         <Text style={s.primaryActionText}>
-          {missionSummary.contractDisplayLabel === 'A signer par le patron'
+          {missionSummary.contractDisplayLabel === 'À signer'
             ? 'Signer le contrat'
-            : missionSummary.contractDisplayLabel === 'A signer par le serveur'
-              ? 'En attente de signature serveur'
+            : missionSummary.contractDisplayLabel === 'Contrat signé'
+              ? 'Voir le contrat'
               : 'Voir le contrat'}
         </Text>
       </TouchableOpacity>
-    ) : shouldShowDpaeAction ? (
-      <TouchableOpacity style={s.primaryAction} onPress={() => handleMarkDpaeDone(mission.id)} activeOpacity={0.88}>
+    ) : isPrimaryDpaeAction ? (
+      <TouchableOpacity style={s.primaryAction} onPress={() => handleMarkDpaeDone(mission, missionSummary, dpaeBlockMessage)} activeOpacity={0.88}>
         <Text style={s.primaryActionText}>Declaration URSSAF</Text>
       </TouchableOpacity>
     ) : canShowCheckInAction ? (
@@ -515,8 +690,15 @@ export default function MissionsPatron() {
         <Text style={[s.primaryActionText, checkInBlockMessage ? s.primaryActionTextDisabled : null]}>Check-in</Text>
       </TouchableOpacity>
     ) : canShowCheckOutAction ? (
-      <TouchableOpacity style={s.primaryAction} onPress={() => handleCheckOut(mission, checkOutBlockMessage)} activeOpacity={0.88}>
-        <Text style={s.primaryActionText}>Check-out</Text>
+      <TouchableOpacity
+        style={[s.primaryAction, checkOutRequestedByMe ? s.primaryActionDisabled : null]}
+        onPress={() => handleCheckOut(mission, checkOutBlockMessage)}
+        activeOpacity={checkOutRequestedByMe ? 1 : 0.88}
+        disabled={checkOutRequestedByMe}
+      >
+        <Text style={[s.primaryActionText, checkOutRequestedByMe ? s.primaryActionTextDisabled : null]}>
+          {checkOutActionLabel}
+        </Text>
       </TouchableOpacity>
     ) : canShowCompleteAction ? (
       <TouchableOpacity style={s.primaryAction} onPress={() => handleTerminerMission(mission)} activeOpacity={0.88}>
@@ -576,7 +758,7 @@ export default function MissionsPatron() {
           {checklistItems.map((item) => (
             <View key={`${mission.id}-${item.label}`} style={s.checklistRow}>
               <Text style={[s.checklistDot, item.done ? s.checklistDotDone : s.checklistDotTodo]}>
-                {item.done ? 'OK' : '...'}
+                {item.done ? 'Fait' : 'À faire'}
               </Text>
               <Text style={[s.checklistText, item.done ? s.checklistTextDone : null]}>{item.label}</Text>
             </View>
@@ -587,6 +769,13 @@ export default function MissionsPatron() {
           <View style={s.assignedRow}>
             <Text style={s.assignedLabel}>Engagement</Text>
             <Text style={s.assignedName}>{engagementLabel}</Text>
+          </View>
+        ) : null}
+
+        {launchOfferApplied ? (
+          <View style={s.billingInfoBox}>
+            <Text style={s.billingInfoTitle}>Paiement</Text>
+            <Text style={s.billingInfoText}>Offre de lancement : frais plateforme offerts</Text>
           </View>
         ) : null}
 
@@ -602,8 +791,8 @@ export default function MissionsPatron() {
         {actionInfoMessages.length > 0 && (
           <View style={s.infoBox}>
             <Text style={s.infoBoxTitle}>Blocages a connaitre</Text>
-            {actionInfoMessages.map((message) => (
-              <Text key={`${mission.id}-${message}`} style={s.infoBoxText}>{message}</Text>
+            {actionInfoMessages.map((message, index) => (
+              <Text key={`${mission.id}-action-info-${index}`} style={s.infoBoxText}>{message}</Text>
             ))}
           </View>
         )}
@@ -614,9 +803,9 @@ export default function MissionsPatron() {
             <TouchableOpacity style={s.criticalAction} onPress={() => handleUrgentReplacement(mission)} activeOpacity={0.88}>
               <Text style={s.criticalActionText}>Remplacement urgent</Text>
             </TouchableOpacity>
-            {shouldShowDpaeAction && !shouldShowContractAction ? (
-              <TouchableOpacity style={s.secondaryAction} onPress={() => handleMarkDpaeDone(mission.id)} activeOpacity={0.88}>
-                <Text style={s.secondaryActionText}>Declaration URSSAF</Text>
+            {canExecuteDpaeAction && !isPrimaryDpaeAction ? (
+              <TouchableOpacity style={s.secondaryAction} onPress={() => handleMarkDpaeDone(mission, missionSummary, dpaeBlockMessage)} activeOpacity={0.88}>
+                <Text style={s.secondaryActionText}>Déclaration URSSAF</Text>
               </TouchableOpacity>
             ) : null}
             <View style={s.secondaryActionsRow}>
@@ -631,7 +820,7 @@ export default function MissionsPatron() {
               )}
             {engagement ? (
               <TouchableOpacity style={s.softAction} onPress={() => handleViewContract(mission.id, engagement.id)} activeOpacity={0.88}>
-                <Text style={s.softActionText}>{contract?.status === 'signed' ? 'Voir contrat' : 'Signer le contrat'}</Text>
+                <Text style={s.softActionText}>{contract?.status === 'signed' ? 'Voir le contrat' : 'Signer le contrat'}</Text>
               </TouchableOpacity>
             ) : null}
             </View>
@@ -652,14 +841,16 @@ export default function MissionsPatron() {
                 <Text style={s.secondaryActionText}>{contract?.status === 'signed' ? 'Voir le contrat' : 'Voir / signer le contrat'}</Text>
               </TouchableOpacity>
             )}
-            {shouldShowDpaeAction && !shouldShowContractAction && (
-              <TouchableOpacity style={s.secondaryAction} onPress={() => handleMarkDpaeDone(mission.id)} activeOpacity={0.88}>
-                <Text style={s.secondaryActionText}>Declaration URSSAF</Text>
+            {canExecuteDpaeAction && !isPrimaryDpaeAction && (
+              <TouchableOpacity style={s.secondaryAction} onPress={() => handleMarkDpaeDone(mission, missionSummary, dpaeBlockMessage)} activeOpacity={0.88}>
+                <Text style={s.secondaryActionText}>Déclaration URSSAF</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={s.softAction} onPress={() => handleAnnulerMission(mission.id)} activeOpacity={0.88}>
-              <Text style={s.softActionText}>Annuler la mission</Text>
-            </TouchableOpacity>
+            {canCancelMission ? (
+              <TouchableOpacity style={s.softAction} onPress={() => handleAnnulerMission(mission.id)} activeOpacity={0.88}>
+                <Text style={s.softActionText}>Annuler la mission</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
       </View>
@@ -683,19 +874,63 @@ export default function MissionsPatron() {
         </View>
 
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Vos missions selectionnees</Text>
-          {missions.length === 0 ? (
+          <Text style={s.sectionTitle}>En cours</Text>
+          <Text style={s.sectionSub}>
+            Retrouvez ici les missions actives annoncees depuis le dashboard.
+          </Text>
+          {missionsEnCours.length === 0 ? (
             <View style={s.emptyCard}>
-              <Text style={s.emptyTitle}>Aucune mission selectionnee</Text>
-              <Text style={s.emptySub}>Les missions selectionnees et en cours apparaitront ici.</Text>
+              <Text style={s.emptyTitle}>Aucune mission en cours</Text>
+              <Text style={s.emptySub}>Les missions actives et deja staffees apparaitront ici.</Text>
             </View>
           ) : (
-            missions.map(renderMissionCard)
+            missionsEnCours.map(renderMissionCard)
           )}
         </View>
       </ScrollView>
 
       <PatronBottomNav />
+
+      <Modal visible={ratingModal !== null} transparent animationType="slide" onRequestClose={closeRatingModal}>
+        <View style={s.modalOverlay}>
+          <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={closeRatingModal} />
+          <View style={s.modalSheet}>
+            <View style={s.modalHandle} />
+            <Text style={s.modalTitle}>Noter le serveur</Text>
+            <Text style={s.modalName}>{ratingModal?.serveurNom ?? 'Prestataire'}</Text>
+            <View style={s.starsRow}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <TouchableOpacity key={n} style={s.starButton} onPress={() => setRatingNote(n)} activeOpacity={0.82}>
+                  <View style={[s.starCircle, ratingNote >= n && s.starCircleActive]}>
+                    <View style={[s.starDot, ratingNote >= n && s.starDotActive]} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={s.commentInput}
+              placeholder="Commentaire optionnel"
+              placeholderTextColor="#9A9388"
+              value={ratingComment}
+              onChangeText={setRatingComment}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+            <TouchableOpacity
+              style={[s.modalPrimaryBtn, ratingLoading && s.modalPrimaryBtnDisabled]}
+              onPress={submitRating}
+              disabled={ratingLoading}
+              activeOpacity={0.78}
+            >
+              <Text style={s.modalPrimaryBtnText}>{ratingLoading ? 'Validation...' : 'Valider la note'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.modalLaterBtn} onPress={closeRatingModal} activeOpacity={0.8}>
+              <Text style={s.modalLaterBtnText}>Plus tard</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -710,6 +945,7 @@ const s = StyleSheet.create({
   sub: { marginTop: 10, fontSize: 14, color: C.soft, lineHeight: 20 },
   section: { paddingHorizontal: 20, paddingBottom: 18 },
   sectionTitle: { fontSize: 22, fontWeight: '800', color: C.title, letterSpacing: -0.4, marginBottom: 14 },
+  sectionSub: { fontSize: 13, color: C.soft, lineHeight: 19, marginTop: -4, marginBottom: 14 },
   missionCard: {
     backgroundColor: C.card,
     borderRadius: 22,
@@ -745,6 +981,9 @@ const s = StyleSheet.create({
   checklistDotTodo: { color: C.terraDark },
   checklistText: { fontSize: 13, color: C.softDark, fontWeight: '600' },
   checklistTextDone: { color: C.text, fontWeight: '800' },
+  billingInfoBox: { backgroundColor: C.greenBg, borderWidth: 1, borderColor: C.greenBd, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 },
+  billingInfoTitle: { fontSize: 12, fontWeight: '800', color: C.green, textTransform: 'uppercase', marginBottom: 4 },
+  billingInfoText: { fontSize: 12, color: C.softDark, lineHeight: 18, fontWeight: '700' },
   warningBox: { backgroundColor: C.redBg, borderWidth: 1, borderColor: C.redBd, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 },
   warningTitle: { fontSize: 12, fontWeight: '800', color: C.red, textTransform: 'uppercase', marginBottom: 4 },
   warningText: { fontSize: 12, color: C.red, lineHeight: 18, fontWeight: '600' },
@@ -767,6 +1006,24 @@ const s = StyleSheet.create({
   softDangerActionText: { color: C.red, fontSize: 14, fontWeight: '700' },
   softHintAction: { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: C.borderSoft, backgroundColor: C.cardWarm, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   softHintActionText: { color: C.muted, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(23,22,20,0.28)', justifyContent: 'flex-end' },
+  modalBackdrop: { flex: 1 },
+  modalSheet: { backgroundColor: C.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 28, borderWidth: 1, borderColor: C.border },
+  modalHandle: { alignSelf: 'center', width: 44, height: 5, borderRadius: 999, backgroundColor: C.borderSoft, marginBottom: 16 },
+  modalTitle: { fontSize: 22, fontWeight: '800', color: C.title, textAlign: 'center', marginBottom: 6 },
+  modalName: { fontSize: 15, fontWeight: '700', color: C.softDark, textAlign: 'center', marginBottom: 18 },
+  starsRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 18 },
+  starButton: { padding: 4 },
+  starCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, alignItems: 'center', justifyContent: 'center', backgroundColor: C.cardWarm },
+  starCircleActive: { borderColor: C.terraDark, backgroundColor: C.terraBg },
+  starDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#D6CDBF' },
+  starDotActive: { backgroundColor: C.terraDark },
+  commentInput: { minHeight: 100, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.cardWarm, paddingHorizontal: 14, paddingVertical: 14, textAlignVertical: 'top', fontSize: 14, color: C.text, marginBottom: 12 },
+  modalPrimaryBtn: { backgroundColor: C.terra, borderRadius: 16, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor: C.terraDark },
+  modalPrimaryBtnDisabled: { opacity: 0.7 },
+  modalPrimaryBtnText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+  modalLaterBtn: { alignItems: 'center', paddingTop: 12, paddingBottom: 2 },
+  modalLaterBtnText: { fontSize: 14, fontWeight: '600', color: C.soft },
   emptyCard: { backgroundColor: C.card, borderRadius: 22, borderWidth: 1, borderColor: C.border, padding: 24, alignItems: 'center' },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 8 },
   emptySub: { fontSize: 13, color: C.muted, textAlign: 'center', lineHeight: 20 },

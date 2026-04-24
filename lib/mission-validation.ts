@@ -20,6 +20,8 @@ export const CONTRACT_STATUSES = [
 export const PAYMENT_STATUSES = [
   'not_authorized',
   'authorized_hold',
+  'captured',
+  'capture_failed',
   'released',
   'blocked',
   'refunded',
@@ -153,6 +155,8 @@ export function normalizePaymentStatus(value: string | null | undefined): Paymen
   const normalized = String(value ?? '').toLowerCase()
   if (
     normalized === 'authorized_hold' ||
+    normalized === 'captured' ||
+    normalized === 'capture_failed' ||
     normalized === 'released' ||
     normalized === 'blocked' ||
     normalized === 'refunded'
@@ -278,6 +282,10 @@ export function getMissionAdministrativeBlockers(
 
   if (payment === 'blocked') {
     blockers.push('Le paiement est actuellement bloque.')
+  }
+
+  if (payment === 'capture_failed') {
+    blockers.push('La capture du paiement a echoue et doit etre reprise.')
   }
 
   return blockers
@@ -426,8 +434,12 @@ export function getMissionLifecycleIssues(snapshot: MissionValidationSnapshot): 
     issues.push('Mission selectionnee encore en attente de validation finale')
   }
 
-  if (paymentStatus === 'released' && missionStatus !== 'completed') {
+  if ((paymentStatus === 'released' || paymentStatus === 'captured') && missionStatus !== 'completed') {
     issues.push('Paiement libere avant fin de mission')
+  }
+
+  if (paymentStatus === 'capture_failed') {
+    issues.push('La capture du paiement a echoue apres la fin de mission')
   }
 
   if (missionStatus === 'in_progress' && !isMissionDpaeConfirmed(snapshot)) {
@@ -494,6 +506,7 @@ export function getCheckOutBlockMessage(
   snapshot: MissionValidationSnapshot,
   now: Date = new Date()
 ): string | null {
+  void now
   const missionStatus = normalizeMissionStatus(snapshot.statut)
   const checkInStatus = normalizeCheckInStatus(snapshot.check_in_status)
 
@@ -503,11 +516,6 @@ export function getCheckOutBlockMessage(
 
   if (checkInStatus !== 'checked_in' && !snapshot.engagement_checked_in_at && missionStatus !== 'in_progress') {
     return 'Le check-out est impossible tant que le check-in n a pas ete effectue.'
-  }
-
-  const missionRange = getMissionTimeRange(snapshot.date, snapshot.heure_debut, snapshot.heure_fin)
-  if (missionRange && now.getTime() < missionRange.end.getTime()) {
-    return `Le check-out sera disponible a partir du ${formatMissionMoment(snapshot.date, snapshot.heure_fin)}.`
   }
 
   return null
@@ -554,19 +562,19 @@ export function getMissionOperationalState(
 export function getMissionOperationalLabel(snapshot: MissionValidationSnapshot): string {
   switch (getMissionOperationalState(snapshot)) {
     case 'waiting_validation':
-      return 'En attente de validation'
+      return 'Confirmée'
     case 'mission_confirmed':
-      return 'Mission confirmee'
+      return 'Confirmée'
     case 'administrative_pending':
-      return 'Administratif a finaliser'
+      return 'Confirmée'
     case 'ready_for_check_in':
-      return 'Prete pour check-in'
+      return 'Confirmée'
     case 'in_progress':
       return 'En cours'
     case 'completed':
-      return 'Terminee'
+      return 'Terminée'
     default:
-      return 'Mission confirmee'
+      return 'Confirmée'
   }
 }
 
@@ -605,21 +613,21 @@ export function getMissionStatusValue(snapshot: MissionValidationSnapshot): Miss
 export function getMissionStatusLabel(snapshot: MissionValidationSnapshot): string {
   switch (getMissionStatusValue(snapshot)) {
     case 'pending':
-      return 'En attente de validation'
+      return 'En attente'
     case 'confirmed':
-      return 'Mission confirmee'
+      return 'Confirmée'
     case 'admin_pending':
-      return 'Administratif a finaliser'
+      return 'Confirmée'
     case 'ready':
-      return 'Prete pour check-in'
+      return 'Confirmée'
     case 'active':
       return 'En cours'
     case 'completed':
-      return 'Terminee'
+      return 'Terminée'
     case 'cancelled':
-      return 'Annulee'
+      return 'Annulée'
     default:
-      return 'Mission confirmee'
+      return 'Confirmée'
   }
 }
 
@@ -627,22 +635,22 @@ export function getMissionContractDisplayLabel(snapshot: MissionValidationSnapsh
   const contractStatus = normalizeContractStatus(snapshot.contract_status)
 
   if (!isMissionAgreementConfirmed(snapshot)) {
-    return 'Sera genere apres confirmation'
+    return 'À générer'
   }
 
   switch (contractStatus) {
     case 'not_generated':
-      return 'A generer'
+      return 'À générer'
     case 'generated':
-      return 'A signer par le patron'
+      return 'À signer'
     case 'signed_by_patron':
-      return 'A signer par le serveur'
+      return 'À signer'
     case 'signed_by_server':
-      return 'Contre-signature patron a finaliser'
+      return 'À signer'
     case 'fully_signed':
-      return 'Signe'
+      return 'Contrat signé'
     default:
-      return 'En cours'
+      return 'À signer'
   }
 }
 

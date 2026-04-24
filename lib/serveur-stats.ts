@@ -11,7 +11,7 @@ export type ServeurExperienceBadgeKey = 'nouveau' | 'confirme' | 'experimente' |
 
 export function getServeurExperienceBadgeKey(completedMissions: number): ServeurExperienceBadgeKey {
   if (completedMissions > 50) return 'expert'
-  if (completedMissions >= 16) return 'experimente'
+  if (completedMissions >= 20) return 'experimente'
   if (completedMissions >= 3) return 'confirme'
   return 'nouveau'
 }
@@ -19,8 +19,8 @@ export function getServeurExperienceBadgeKey(completedMissions: number): Serveur
 export function getServeurExperienceBadgeLabel(completedMissions: number): string {
   const key = getServeurExperienceBadgeKey(completedMissions)
   if (key === 'expert') return 'Expert'
-  if (key === 'experimente') return 'Experimente'
-  if (key === 'confirme') return 'Confirme'
+  if (key === 'experimente') return 'Pro'
+  if (key === 'confirme') return 'Confirmé'
   return 'Nouveau'
 }
 
@@ -29,12 +29,34 @@ export type ServeurMissionStats = {
   noShowMissions: number
 }
 
+function hasValidatedCheckOut(row: {
+  check_in_status?: string | null
+  checked_out_at?: string | null
+}): boolean {
+  const checkInStatus = String(row.check_in_status ?? '').toLowerCase()
+  return Boolean(row.checked_out_at) || checkInStatus === 'checked_out'
+}
+
+function isLegacyCompletedMission(row: {
+  statut?: string | null
+  check_in_status?: string | null
+  checked_out_at?: string | null
+}): boolean {
+  const status = normalizeStatus(row.statut)
+  const checkInStatus = String(row.check_in_status ?? '').toLowerCase()
+
+  if (!COMPLETED_STATUSES.has(status)) return false
+  if (hasValidatedCheckOut(row)) return false
+
+  return checkInStatus === '' || checkInStatus === 'null' || checkInStatus === 'undefined'
+}
+
 export async function computeServeurMissionStatsFromAnnonces(
   serveurId: string
 ): Promise<ServeurMissionStats> {
   const { data, error } = await supabase
     .from('annonces')
-    .select('statut')
+    .select('statut, check_in_status, checked_out_at')
     .eq('serveur_id', serveurId)
     .in('statut', ['completed', 'terminee', 'no_show'])
 
@@ -46,9 +68,9 @@ export async function computeServeurMissionStatsFromAnnonces(
   let completedMissions = 0
   let noShowMissions = 0
 
-  for (const row of data as { statut?: string | null }[]) {
+  for (const row of data as { statut?: string | null; check_in_status?: string | null; checked_out_at?: string | null }[]) {
     const status = normalizeStatus(row.statut)
-    if (COMPLETED_STATUSES.has(status)) {
+    if (COMPLETED_STATUSES.has(status) && (hasValidatedCheckOut(row) || isLegacyCompletedMission(row))) {
       completedMissions += 1
       continue
     }
@@ -93,7 +115,7 @@ export async function computeServeurMissionStatsMap(
 
   const { data, error } = await supabase
     .from('annonces')
-    .select('serveur_id, statut')
+    .select('serveur_id, statut, check_in_status, checked_out_at')
     .in('serveur_id', uniqueIds)
     .in('statut', ['completed', 'terminee', 'no_show'])
 
@@ -106,12 +128,12 @@ export async function computeServeurMissionStatsMap(
     uniqueIds.map((id) => [id, { completedMissions: 0, noShowMissions: 0 }])
   )
 
-  for (const row of data as { serveur_id?: string | null; statut?: string | null }[]) {
+  for (const row of data as { serveur_id?: string | null; statut?: string | null; check_in_status?: string | null; checked_out_at?: string | null }[]) {
     const serveurId = String(row.serveur_id ?? '')
     if (!serveurId || !statsMap[serveurId]) continue
 
     const status = normalizeStatus(row.statut)
-    if (COMPLETED_STATUSES.has(status)) {
+    if (COMPLETED_STATUSES.has(status) && (hasValidatedCheckOut(row) || isLegacyCompletedMission(row))) {
       statsMap[serveurId].completedMissions += 1
       continue
     }

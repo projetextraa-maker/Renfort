@@ -228,9 +228,9 @@ export default function ContratEngagementScreen() {
           <View style={s.card}>
             <Text style={s.sectionTitle}>Engagement rattache</Text>
             <Text style={s.rowLabel}>Statut mission</Text>
-            <Text style={s.rowValue}>{missionSummary?.missionStatusLabel ?? 'Mission confirmée'}</Text>
+            <Text style={s.rowValue}>{missionSummary?.missionStatusLabel ?? 'Confirmée'}</Text>
             <Text style={s.rowLabel}>Contrat</Text>
-            <Text style={s.rowValue}>{missionSummary?.contractDisplayLabel ?? 'En cours'}</Text>
+            <Text style={s.rowValue}>{missionSummary?.contractDisplayLabel ?? 'À signer'}</Text>
             {missionSummary?.missionStatusValue !== 'pending' ? (
               <>
                 <Text style={s.rowLabel}>Engagement</Text>
@@ -252,7 +252,7 @@ export default function ContratEngagementScreen() {
             <Text style={s.rowValue}>{missionSummary.missionStatusLabel}</Text>
             <Text style={s.rowLabel}>Accord mission</Text>
             <Text style={s.rowValue}>
-              {missionSummary.isAgreementConfirmed ? 'Engagement confirmé' : 'En attente de validation'}
+              {missionSummary.isAgreementConfirmed ? 'Validé des deux côtés' : 'En attente de validation'}
             </Text>
             {missionAgreementBlockers.length > 0 ? (
               <View style={s.inlineWarnBox}>
@@ -354,9 +354,15 @@ export default function ContratEngagementScreen() {
         ) : null}
 
         {canSign ? (
-          <TouchableOpacity style={[s.primaryBtn, signing && s.primaryBtnDisabled]} onPress={handleSign} disabled={signing} activeOpacity={0.88}>
-            <Text style={s.primaryBtnTxt}>{signing ? 'Signature...' : actorRole === 'patron' ? 'Signer en tant que patron' : 'Signer en tant que serveur'}</Text>
-          </TouchableOpacity>
+          <>
+            <View style={s.signatureNotice}>
+              <Text style={s.signatureNoticeTitle}>Acceptation du contrat</Text>
+              <Text style={s.signatureNoticeText}>Je reconnais avoir lu et accepté les termes du contrat</Text>
+            </View>
+            <TouchableOpacity style={[s.primaryBtn, signing && s.primaryBtnDisabled]} onPress={handleSign} disabled={signing} activeOpacity={0.88}>
+              <Text style={s.primaryBtnTxt}>{signing ? 'Signature...' : 'Je signe le contrat'}</Text>
+            </TouchableOpacity>
+          </>
         ) : null}
       </ScrollView>
     </View>
@@ -387,6 +393,29 @@ const s = StyleSheet.create({
   presenceText: { marginTop: 6, fontSize: 13, color: C.textSoft, lineHeight: 20 },
   legalText: { fontSize: 15, fontWeight: '700', color: C.text, marginBottom: 6 },
   legalSub: { fontSize: 13, color: C.textSoft, lineHeight: 20 },
+  signatureNotice: {
+    backgroundColor: C.cardSoft,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.borderSoft,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  signatureNoticeTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.title,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  signatureNoticeText: {
+    fontSize: 14,
+    color: C.text,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
   primaryBtn: { backgroundColor: C.terra, borderRadius: 18, paddingVertical: 16, alignItems: 'center', marginBottom: 14, borderWidth: 1, borderColor: C.terraDark },
   primaryBtnDisabled: { opacity: 0.7 },
   primaryBtnTxt: { fontSize: 15, fontWeight: '800', color: '#FFFFFF' },

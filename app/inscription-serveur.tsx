@@ -15,9 +15,9 @@ const C = {
   title: '#181511',
   text: '#5D554C',
   muted: '#9A8C7E',
-  terra: '#C46A3C',
-  terraSoft: '#FFF6ED',
-  terraBorder: '#F0C7A8',
+  terra: '#1F6B45',
+  terraSoft: '#F1F8F3',
+  terraBorder: '#C7DDCD',
   shadow: '#2B2118',
 }
 
@@ -53,18 +53,18 @@ export default function InscriptionServeur() {
 
   const handleResetPassword = async () => {
     if (!email.trim()) {
-      Alert.alert('Information', 'Renseignez votre email pour recevoir le lien de réinitialisation.')
+      Alert.alert('Information', 'Renseignez votre email pour recevoir le lien de rÃ©initialisation.')
       return
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim())
     if (error) {
       console.error('inscription serveur resetPasswordForEmail error', error)
-      Alert.alert('Erreur', "Impossible d'envoyer l'email de réinitialisation pour le moment.")
+      Alert.alert('Erreur', "Impossible d'envoyer l'email de rÃ©initialisation pour le moment.")
       return
     }
 
-    Alert.alert('Email envoyé', 'Un lien de réinitialisation vient d’être envoyé à votre adresse email.')
+    Alert.alert('Email envoyÃ©', 'Un lien de rÃ©initialisation vient dâ€™Ãªtre envoyÃ© Ã  votre adresse email.')
   }
 
   const handleRecoverExistingServeurAccount = async () => {
@@ -82,13 +82,13 @@ export default function InscriptionServeur() {
     })
 
     if (error || !data.user || !data.session) {
-      setSubmitError("Un compte existe déjà avec cet email. Connectez-vous ou réinitialisez votre mot de passe.")
+      setSubmitError("Un compte existe dÃ©jÃ  avec cet email. Connectez-vous ou rÃ©initialisez votre mot de passe.")
       Alert.alert(
         'Compte existant',
-        "Cet email est déjà utilisé. Connectez-vous avec votre mot de passe ou réinitialisez-le si besoin.",
+        "Cet email est dÃ©jÃ  utilisÃ©. Connectez-vous avec votre mot de passe ou rÃ©initialisez-le si besoin.",
         [
           { text: 'Annuler', style: 'cancel' },
-          { text: 'Mot de passe oublié', onPress: () => void handleResetPassword() },
+          { text: 'Mot de passe oubliÃ©', onPress: () => void handleResetPassword() },
           { text: 'Se connecter', onPress: () => router.push('/connexion-serveur') },
         ]
       )
@@ -100,16 +100,16 @@ export default function InscriptionServeur() {
     console.log('[signup:serveur] existing-account inspection result', accountState)
 
     if (!accountState.ok) {
-      setSubmitError("Le compte existe déjà. Connectez-vous pour continuer.")
+      setSubmitError("Le compte existe dÃ©jÃ . Connectez-vous pour continuer.")
       router.replace('/connexion-serveur')
       return
     }
 
     if (accountState.role && accountState.role !== 'serveur') {
-      setSubmitError("Cet email est d�j� associ� � un compte patron. Connectez-vous avec le bon espace.")
+      setSubmitError("Cet email est déjà associé à un compte patron. Connectez-vous avec le bon espace.")
       Alert.alert(
-        'Compte d�j� existant',
-        "Cet email est d�j� associ� � un compte patron. Connectez-vous depuis l'espace patron.",
+        'Compte déjà existant',
+        "Cet email est déjà associé à un compte patron. Connectez-vous depuis l'espace patron.",
         [
           { text: 'Annuler', style: 'cancel' },
           { text: 'Se connecter', onPress: () => router.push('/connexion-patron') },
@@ -123,10 +123,10 @@ export default function InscriptionServeur() {
     console.log('[signup:serveur] existing-account profile sync result', profileSync)
 
     if (!profileSync.ok) {
-      setSubmitError("Le compte existe d�j�, mais sa r�cup�ration a �chou�. Connectez-vous pour finaliser la reprise.")
+      setSubmitError("Le compte existe déjà, mais sa récupération a échoué. Connectez-vous pour finaliser la reprise.")
       Alert.alert(
         'Compte existant',
-        "Le compte Auth existe d�j�, mais le profil serveur n'a pas pu �tre r�par� automatiquement. Connectez-vous pour finaliser la reprise.",
+        "Le compte Auth existe déjà, mais le profil serveur n'a pas pu être réparé automatiquement. Connectez-vous pour finaliser la reprise.",
         [
           { text: 'Annuler', style: 'cancel' },
           { text: 'Se connecter', onPress: () => router.push('/connexion-serveur') },
@@ -139,8 +139,8 @@ export default function InscriptionServeur() {
     console.log('[signup:serveur] existing-account repaired state', repairedState)
     finishSignupFlow(
       repairedState.ok && !repairedState.serveurExists
-        ? "Votre compte existait d�j� dans Auth. Le profil serveur a �t� r�par�. Redirection en cours..."
-        : "Votre compte existe d�j�. Redirection en cours...",
+        ? "Votre compte existait déjà dans Auth. Le profil serveur a été réparé. Redirection en cours..."
+        : "Votre compte existe déjà. Redirection en cours...",
       getHomeRouteForRole('serveur')
     )
   }
@@ -213,7 +213,7 @@ export default function InscriptionServeur() {
         hasPassword: Boolean(motDePasse),
         hasSelectedCity: Boolean(selectedCity),
       })
-      setSubmitError('Veuillez remplir tous les champs et s�lectionner une ville dans la liste.')
+      setSubmitError('Veuillez remplir tous les champs et sélectionner une ville dans la liste.')
       Alert.alert('Erreur', 'Veuillez remplir tous les champs')
       return
     }
@@ -298,8 +298,8 @@ export default function InscriptionServeur() {
       if (!profileSync.ok) {
         console.error('inscription serveur profile sync error', profileSync)
         setLoading(false)
-        setSubmitError("Le compte a �t� cr��, mais le profil serveur n'a pas pu �tre initialis�.")
-        Alert.alert('Erreur', "Le compte a �t� cr��, mais le profil serveur n'a pas pu �tre initialis�.")
+        setSubmitError("Le compte a été créé, mais le profil serveur n'a pas pu être initialisé.")
+        Alert.alert('Erreur', "Le compte a été créé, mais le profil serveur n'a pas pu être initialisé.")
         return
       }
     }
@@ -308,11 +308,11 @@ export default function InscriptionServeur() {
     const hasSession = Boolean(data.session)
     console.log('[signup:serveur] navigation start', { hasSession })
     if (hasSession) {
-      finishSignupFlow('Votre compte serveur a bien �t� cr��. Redirection en cours...', getHomeRouteForRole('serveur'))
+      finishSignupFlow('Votre compte serveur a bien été créé. Redirection en cours...', getHomeRouteForRole('serveur'))
       return
     }
 
-    finishSignupFlow('Votre compte a bien �t� cr��. Confirmez votre email puis connectez-vous.', getLoginRouteForRole('serveur'))
+    finishSignupFlow('Votre compte a bien été créé. Confirmez votre email puis connectez-vous.', getLoginRouteForRole('serveur'))
   }
 
   return (
@@ -325,13 +325,13 @@ export default function InscriptionServeur() {
         </TouchableOpacity>
 
         <Text style={styles.eyebrow}>RENFORT</Text>
-        <Text style={styles.title}>Créer un compte</Text>
+        <Text style={styles.title}>CrÃ©er un compte</Text>
         <Text style={styles.subtitle}>
-          Rejoignez Renfort et accédez rapidement aux extras autour de vous.
+          Rejoignez Renfort et accÃ©dez rapidement aux extras autour de vous.
         </Text>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Prénom</Text>
+          <Text style={styles.label}>PrÃ©nom</Text>
           <TextInput style={styles.input} placeholder="Ex : Thomas" placeholderTextColor="#9A9388" value={prenom} onChangeText={(value) => { setPrenom(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Nom</Text>
@@ -353,7 +353,7 @@ export default function InscriptionServeur() {
           />
           {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
-          <Text style={styles.label}>Téléphone</Text>
+          <Text style={styles.label}>TÃ©lÃ©phone</Text>
           <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={(value) => { setTelephone(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Ville ou code postal</Text>
@@ -379,7 +379,7 @@ export default function InscriptionServeur() {
               {citiesLoading ? (
                 <Text style={styles.cityHelper}>Recherche des suggestions...</Text>
               ) : cityOptions.length === 0 ? (
-                <Text style={styles.cityHelper}>Aucune ville trouvée</Text>
+                <Text style={styles.cityHelper}>Aucune ville trouvÃ©e</Text>
               ) : (
                 cityOptions.map((city) => {
                   const isSelected = selectedCity?.nom === city.nom && selectedCity?.codePostal === city.codePostal
@@ -401,7 +401,7 @@ export default function InscriptionServeur() {
           )}
 
           <Text style={styles.label}>Mot de passe</Text>
-          <TextInput style={styles.input} placeholder="Minimum 6 caractères" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
+          <TextInput style={styles.input} placeholder="Minimum 6 caractÃ¨res" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Code parrain (optionnel)</Text>
           <TextInput
@@ -425,12 +425,12 @@ export default function InscriptionServeur() {
             }}
             disabled={loading || !selectedCity}
           >
-            <Text style={styles.buttonText}>{loading ? 'Création en cours...' : 'Créer mon compte'}</Text>
+            <Text style={styles.buttonText}>{loading ? 'CrÃ©ation en cours...' : 'CrÃ©er mon compte'}</Text>
           </Pressable>
         </View>
 
         <TouchableOpacity style={styles.loginLink} onPress={() => router.push('/connexion-serveur')}>
-          <Text style={styles.loginText}>Déjà un compte ? Se connecter</Text>
+          <Text style={styles.loginText}>DÃ©jÃ  un compte ? Se connecter</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -442,7 +442,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 24, paddingTop: 58, paddingBottom: 36 },
   back: { alignSelf: 'flex-start', marginBottom: 18 },
   backText: { fontSize: 15, color: C.terra, fontWeight: '700' },
-  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.6, color: C.muted, marginBottom: 12 },
+  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.6, color: C.terra, marginBottom: 12 },
   title: { fontSize: 34, lineHeight: 40, fontWeight: '900', color: C.title, letterSpacing: -0.9, marginBottom: 12 },
   subtitle: { fontSize: 16, lineHeight: 24, color: C.text, marginBottom: 24, maxWidth: 320 },
   card: {

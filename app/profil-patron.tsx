@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
 import { useEffect, useState } from 'react'
 import { Alert, Image, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import PatronBottomNav from '../components/PatronBottomNav'
@@ -12,7 +13,6 @@ import {
   saveProfilePhotoUrl,
   uploadProfilePhoto,
 } from '../lib/profile-photo'
-import { isActiveSubscription, syncPatronSubscriptionCycle } from '../lib/subscription'
 import { supabase } from '../lib/supabase'
 
 const C = {
@@ -40,32 +40,36 @@ const FR = {
   loading: 'Chargement...',
   back: 'Retour',
   cancel: 'Annuler',
-  logout: 'Se déconnecter',
-  logoutConfirm: 'Voulez-vous vous déconnecter ?',
+  logout: 'Se deconnecter',
+  logoutConfirm: 'Voulez-vous vous deconnecter ?',
   profilePhoto: 'Photo de profil',
   profilePhotoBody: 'Choisissez une action.',
   takePhoto: 'Prendre une photo',
   pickGallery: 'Choisir depuis la galerie',
   removePhoto: 'Supprimer la photo',
-  photoUpdating: 'Mise à jour...',
-  cityUnknown: 'Ville non renseignée',
+  photoUpdating: 'Mise a jour...',
+  cityUnknown: 'Ville non renseignee',
   subscription: 'Abonnement',
   noSubscription: 'Sans abonnement',
-  subscribed: 'Abonné',
+  subscribed: 'Abonne',
   info: 'Informations',
-  infoPrenom: 'Prénom',
+  infoPrenom: 'Prenom',
   infoEmail: 'Email',
-  infoPhone: 'Téléphone',
+  infoPhone: 'Telephone',
   noVenue: 'Aucun',
-  myRestaurant: 'Mon établissement',
+  myRestaurant: 'Mon etablissement',
   seeOffers: 'Voir les offres',
-  activeSubscriptionDesc: 'Votre abonnement est actif et prêt pour vos prochaines missions.',
-  pausedSubscriptionDesc: 'Votre abonnement est en pause. Réactivez-le depuis les offres quand vous le souhaitez.',
-  noSubscriptionDesc: `Vous êtes actuellement à l'acte, à 10${EURO} par mission réalisée.`,
+  activeSubscriptionDesc: 'Votre abonnement est actif et pret pour vos prochaines missions.',
+  pausedSubscriptionDesc: 'Votre abonnement est en pause. Reactivez-le depuis les offres quand vous le souhaitez.',
+  noSubscriptionDesc: `Vous etes actuellement a l'acte, a 10${EURO} par mission realisee.`,
   editProfile: 'Modifier mon profil',
-  manageVenues: 'Gérer mes établissements',
-  addVenue: 'Ajouter un établissement',
+  manageVenues: 'Gerer mes etablissements',
+  addVenue: 'Ajouter un etablissement',
+  paymentCard: 'Ma carte de paiement',
   actions: 'Actions',
+  heroSubtitle: 'Pilotez votre activite, vos etablissements et vos paiements en toute simplicite.',
+  activeProAccount: 'Compte Pro actif',
+  infoVenue: 'Etablissement principal',
 }
 
 function buildSubscriptionLabel(subscription: string | null | undefined): string {
@@ -74,12 +78,13 @@ function buildSubscriptionLabel(subscription: string | null | undefined): string
   }
 
   const offer = getPatronPlanOffer(subscription)
-  return `${offer.title} · ${offer.priceLabel}`
+  return `${offer.title} - ${offer.priceLabel}`
 }
 
 export default function ProfilPatron() {
   const router = useRouter()
   const [patron, setPatron] = useState<any>(null)
+  const [billingProfile, setBillingProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [photoLoading, setPhotoLoading] = useState(false)
   const [etablissementCount, setEtablissementCount] = useState(0)
@@ -97,9 +102,15 @@ export default function ProfilPatron() {
 
     const { data, error } = await supabase.from('patrons').select('*').eq('id', user.id).single()
     if (!error && data) {
-      await syncPatronSubscriptionCycle(user.id)
-      const { data: fresh } = await supabase.from('patrons').select('*').eq('id', user.id).single()
-      setPatron(fresh ?? data)
+      setPatron(data)
+
+      const { data: nextBillingProfile } = await supabase
+        .from('patron_billing_profiles')
+        .select('current_plan, stripe_status, stripe_price_id, current_period_end, cancel_at_period_end')
+        .eq('patron_id', user.id)
+        .maybeSingle()
+
+      setBillingProfile(nextBillingProfile ?? null)
 
       const etablissements = await fetchEtablissementsForPatron(user.id)
       setEtablissementCount(etablissements.length)
@@ -194,11 +205,13 @@ export default function ProfilPatron() {
     )
   }
 
-  const subscription = patron?.abonnement
-  const hasActive = isActiveSubscription(subscription)
-  const isPaused = subscription === 'pro_pause' || subscription === 'pro_plus_pause'
+  const hasActive =
+    (billingProfile?.stripe_status === 'active' || billingProfile?.stripe_status === 'trialing') &&
+    Boolean(billingProfile?.stripe_price_id)
+  const subscription = hasActive ? billingProfile?.current_plan ?? null : null
+  const isPaused = false
   const currentOffer = getPatronPlanOffer(subscription)
-  const statusLabel = subscription === 'pro_plus' ? 'Pro+' : subscription === 'pro' ? 'Pro' : isPaused ? FR.subscribed : FR.noSubscription
+  const statusLabel = subscription === 'pro_plus' ? 'Pro+' : subscription === 'pro' ? 'Pro' : FR.noSubscription
   const subscriptionLabel = buildSubscriptionLabel(subscription)
   const venueLabel = defaultEtablissement?.nom ?? patron?.nom_restaurant ?? FR.myRestaurant
   const initials = venueLabel?.[0]?.toUpperCase() ?? patron?.prenom?.[0]?.toUpperCase() ?? '?'
@@ -207,9 +220,7 @@ export default function ProfilPatron() {
   const statusStyle = hasActive ? s.statusBadgeActive : isPaused ? s.statusBadgePaused : s.statusBadgeInactive
   const subscriptionDescription = hasActive
     ? currentOffer.commissionLabel
-    : isPaused
-      ? FR.pausedSubscriptionDesc
-      : `${currentOffer.priceLabel} · ${currentOffer.commissionLabel}`
+    : `${currentOffer.priceLabel} - ${currentOffer.commissionLabel}`
 
   return (
     <View style={s.screen}>
@@ -247,10 +258,11 @@ export default function ProfilPatron() {
 
               <View style={s.heroInfo}>
                 <Text style={s.nom}>{venueLabel}</Text>
+                <Text style={s.heroSubtitle}>{FR.heroSubtitle}</Text>
                 <Text style={s.ville}>📍 {patron?.ville || FR.cityUnknown}</Text>
                 <View style={[s.statusBadge, statusStyle]}>
                   <View style={[s.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={[s.statusTxt, { color: statusColor }]}>{statusLabel}</Text>
+                  <Text style={[s.statusTxt, { color: statusColor }]}>{hasActive ? FR.activeProAccount : statusLabel}</Text>
                 </View>
               </View>
             </View>
@@ -287,28 +299,75 @@ export default function ProfilPatron() {
         <Text style={s.secEyebrow}>{FR.info}</Text>
         <View style={s.infoCard}>
           <View style={s.infoRow}>
-            <Text style={s.infoLabel}>{FR.infoPrenom}</Text>
-            <Text style={s.infoVal}>{patron?.prenom || '-'}</Text>
+            <View style={s.infoLead}>
+              <Ionicons name="person-outline" size={20} color={C.terra} style={s.infoIcon} />
+              <View style={s.infoContent}>
+                <Text style={s.infoLabel}>{FR.infoPrenom}</Text>
+                <Text style={s.infoVal}>{patron?.prenom || '-'}</Text>
+              </View>
+            </View>
           </View>
           <View style={s.infoDivider} />
           <View style={s.infoRow}>
-            <Text style={s.infoLabel}>{FR.infoEmail}</Text>
-            <Text style={s.infoVal}>{patron?.email || '-'}</Text>
+            <View style={s.infoLead}>
+              <Ionicons name="mail-outline" size={20} color={C.terra} style={s.infoIcon} />
+              <View style={s.infoContent}>
+                <Text style={s.infoLabel}>{FR.infoEmail}</Text>
+                <Text style={s.infoVal}>{patron?.email || '-'}</Text>
+              </View>
+            </View>
           </View>
           <View style={s.infoDivider} />
           <View style={s.infoRow}>
-            <Text style={s.infoLabel}>{FR.infoPhone}</Text>
-            <Text style={s.infoVal}>{patron?.telephone || '-'}</Text>
+            <View style={s.infoLead}>
+              <Ionicons name="call-outline" size={20} color={C.terra} style={s.infoIcon} />
+              <View style={s.infoContent}>
+                <Text style={s.infoLabel}>{FR.infoPhone}</Text>
+                <Text style={s.infoVal}>{patron?.telephone || '-'}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={s.infoDivider} />
+          <View style={s.infoRow}>
+            <View style={s.infoLead}>
+              <Ionicons name="business-outline" size={20} color={C.terra} style={s.infoIcon} />
+              <View style={s.infoContent}>
+                <Text style={s.infoLabel}>{FR.infoVenue}</Text>
+                <Text style={s.infoVal}>{venueLabel}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
         <Text style={s.secEyebrow}>{FR.actions}</Text>
         <TouchableOpacity style={s.actionCard} onPress={() => router.push('/modifier-profil-patron')} activeOpacity={0.82}>
-          <Text style={s.actionTxt}>{FR.editProfile}</Text>
+          <View style={s.actionRow}>
+            <View style={s.actionLead}>
+              <Ionicons name="create-outline" size={19} color={C.terra} style={s.actionIcon} />
+              <Text style={s.actionTxt}>{FR.editProfile}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={C.textMuted} style={s.actionChevron} />
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.actionCard} onPress={() => router.push('/mes-etablissements')} activeOpacity={0.82}>
-          <Text style={s.actionTxt}>{etablissementCount > 0 ? FR.manageVenues : FR.addVenue}</Text>
+          <View style={s.actionRow}>
+            <View style={s.actionLead}>
+              <Ionicons name="business-outline" size={19} color={C.terra} style={s.actionIcon} />
+              <Text style={s.actionTxt}>{etablissementCount > 0 ? FR.manageVenues : FR.addVenue}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={C.textMuted} style={s.actionChevron} />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={s.actionCard} onPress={() => router.push('/carte-paiement-patron' as any)} activeOpacity={0.82}>
+          <View style={s.actionRow}>
+            <View style={s.actionLead}>
+              <Ionicons name="card-outline" size={19} color={C.terra} style={s.actionIcon} />
+              <Text style={s.actionTxt}>{FR.paymentCard}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={C.textMuted} style={s.actionChevron} />
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity style={s.logoutBtn} onPress={handleDeconnexion} activeOpacity={0.7}>
@@ -396,6 +455,7 @@ const s = StyleSheet.create({
   heroInfo: { flex: 1 },
   nom: { fontSize: 27, fontWeight: '800', color: C.title, letterSpacing: -0.6, marginBottom: 4 },
   ville: { fontSize: 13, color: C.textSoft, marginBottom: 10, fontWeight: '600' },
+  heroSubtitle: { fontSize: 13, color: C.textMuted, lineHeight: 19, marginBottom: 12, paddingRight: 8 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -455,7 +515,19 @@ const s = StyleSheet.create({
   aboCardTitle: { fontSize: 20, fontWeight: '800', color: C.title, marginBottom: 6, letterSpacing: -0.3 },
   aboCardDesc: { fontSize: 13, color: C.textMuted, lineHeight: 19, marginBottom: 16 },
 
-  btnPrimary: { backgroundColor: C.terra, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  btnPrimary: {
+    backgroundColor: C.terra,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#AE5C33',
+    shadowColor: '#A95228',
+    shadowOpacity: 0.14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 2,
+  },
   btnPrimaryTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   infoCard: {
@@ -473,13 +545,15 @@ const s = StyleSheet.create({
   },
   infoRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 14,
   },
-  infoLabel: { fontSize: 13, color: C.textMuted },
-  infoVal: { fontSize: 13, fontWeight: '600', color: C.title, flexShrink: 1, textAlign: 'right' },
+  infoLead: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  infoIcon: { width: 24, textAlign: 'center' },
+  infoContent: { flex: 1 },
+  infoLabel: { fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 3, fontWeight: '700' },
+  infoVal: { fontSize: 14, fontWeight: '600', color: C.title, flexShrink: 1 },
   infoDivider: { height: 1, backgroundColor: C.borderSoft, marginHorizontal: 16 },
 
   actionCard: {
@@ -491,9 +565,31 @@ const s = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 15,
     paddingHorizontal: 16,
+    shadowColor: '#120E0A',
+    shadowOpacity: 0.03,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 1,
   },
-  actionTxt: { fontSize: 14, color: C.terra, fontWeight: '700' },
+  actionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  actionLead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  actionIcon: { width: 22, textAlign: 'center' },
+  actionTxt: { fontSize: 14, color: C.title, fontWeight: '700' },
+  actionChevron: { textAlign: 'center' },
 
-  logoutBtn: { alignItems: 'center', paddingVertical: 20, marginTop: 8 },
-  logoutTxt: { fontSize: 13, color: C.red, fontWeight: '500' },
+  logoutBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    marginTop: 16,
+    marginHorizontal: 18,
+    borderRadius: 14,
+    backgroundColor: '#F3EEE6',
+    borderWidth: 1,
+    borderColor: C.borderSoft,
+  },
+  logoutTxt: { fontSize: 13, color: C.textSoft, fontWeight: '600' },
 })
+
+
+
