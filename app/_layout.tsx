@@ -1,8 +1,8 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
-import { StripeProvider } from '@stripe/stripe-react-native'
 import { NativeModules, Platform } from 'react-native'
+import StripeAppProvider from '../components/StripeAppProvider'
 import { ensureAccountProfileForUser } from '../lib/auth-profile-sync'
 import { getHomeRouteForRole, getLoginRouteForRole, getRequiredRoleForSegments, resolveAccountRole } from '../lib/auth-role'
 import { enregistrerNotifications, shouldRetryPushRegistration } from '../lib/notifications'
@@ -131,5 +131,5 @@ export default function RootLayout() {
     return appContent
   }
 
-  return <StripeProvider publishableKey={stripePublishableKey}>{appContent}</StripeProvider>
+  return <StripeAppProvider publishableKey={stripePublishableKey}>{appContent}</StripeAppProvider>
 }
