@@ -51,18 +51,18 @@ export default function InscriptionPatron() {
 
   const handleResetPassword = async () => {
     if (!email.trim()) {
-      Alert.alert('Information', 'Renseignez votre email pour recevoir le lien de réinitialisation.')
+      Alert.alert('Information', 'Renseignez votre email pour recevoir le lien de reinitialisation.')
       return
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim())
     if (error) {
       console.error('inscription patron resetPasswordForEmail error', error)
-      Alert.alert('Erreur', "Impossible d'envoyer l'email de réinitialisation pour le moment.")
+      Alert.alert('Erreur', "Impossible d'envoyer l'email de reinitialisation pour le moment.")
       return
     }
 
-    Alert.alert('Email envoyé', "Un lien de réinitialisation vient d'être envoyé à votre adresse email.")
+    Alert.alert('Email envoye', "Un lien de reinitialisation vient d'etre envoye a votre adresse email.")
   }
 
   const handleRecoverExistingPatronAccount = async () => {
@@ -80,13 +80,13 @@ export default function InscriptionPatron() {
     })
 
     if (error || !data.user || !data.session) {
-      setSubmitError("Un compte existe déjà avec cet email. Connectez-vous ou réinitialisez votre mot de passe.")
+      setSubmitError("Un compte existe deja avec cet email. Connectez-vous ou reinitialisez votre mot de passe.")
       Alert.alert(
         'Compte existant',
-        "Cet email est déjà utilisé. Connectez-vous avec votre mot de passe ou réinitialisez-le si besoin.",
+        "Cet email est deja utilise. Connectez-vous avec votre mot de passe ou reinitialisez-le si besoin.",
         [
           { text: 'Annuler', style: 'cancel' },
-          { text: 'Mot de passe oublié', onPress: () => void handleResetPassword() },
+          { text: 'Mot de passe oublie', onPress: () => void handleResetPassword() },
           { text: 'Se connecter', onPress: () => router.push('/connexion-patron') },
         ]
       )
@@ -98,16 +98,16 @@ export default function InscriptionPatron() {
     console.log('[signup:patron] existing-account inspection result', accountState)
 
     if (!accountState.ok) {
-      setSubmitError("Le compte existe déjà. Connectez-vous pour continuer.")
+      setSubmitError("Le compte existe deja. Connectez-vous pour continuer.")
       router.replace('/connexion-patron')
       return
     }
 
     if (accountState.role && accountState.role !== 'patron') {
-      setSubmitError("Cet email est déjà associé à un compte serveur. Connectez-vous avec le bon espace.")
+      setSubmitError("Cet email est deja associe a un compte serveur. Connectez-vous avec le bon espace.")
       Alert.alert(
-        'Compte déjà existant',
-        "Cet email est déjà associé à un compte serveur. Connectez-vous depuis l'espace serveur.",
+        'Compte deja existant',
+        "Cet email est deja associe a un compte serveur. Connectez-vous depuis l'espace serveur.",
         [
           { text: 'Annuler', style: 'cancel' },
           { text: 'Se connecter', onPress: () => router.push('/connexion-serveur') },
@@ -121,10 +121,10 @@ export default function InscriptionPatron() {
     console.log('[signup:patron] existing-account profile sync result', profileSync)
 
     if (!profileSync.ok) {
-      setSubmitError("Le compte existe déjà, mais sa récupération a échoué. Connectez-vous pour finaliser la reprise.")
+      setSubmitError("Le compte existe deja, mais sa recuperation a echoue. Connectez-vous pour finaliser la reprise.")
       Alert.alert(
         'Compte existant',
-        "Le compte Auth existe déjà, mais son profil patron n'a pas pu être réparé automatiquement. Connectez-vous pour finaliser la reprise.",
+        "Le compte Auth existe deja, mais son profil patron n'a pas pu etre repare automatiquement. Connectez-vous pour finaliser la reprise.",
         [
           { text: 'Annuler', style: 'cancel' },
           { text: 'Se connecter', onPress: () => router.push('/connexion-patron') },
@@ -137,8 +137,8 @@ export default function InscriptionPatron() {
     console.log('[signup:patron] existing-account repaired state', repairedState)
     finishSignupFlow(
       repairedState.ok && (!repairedState.patronExists || repairedState.etablissementCount === 0)
-        ? "Votre compte existait déjà dans Auth. Le profil patron a été réparé. Redirection en cours..."
-        : "Votre compte existe déjà. Redirection en cours...",
+        ? "Votre compte existait deja dans Auth. Le profil patron a ete repare. Redirection en cours..."
+        : "Votre compte existe deja. Redirection en cours...",
       getHomeRouteForRole('patron')
     )
   }
@@ -219,8 +219,8 @@ export default function InscriptionPatron() {
         locationQuery,
         cityOptionsCount: cityOptions.length,
       })
-      setCityError('Veuillez sélectionner une ville dans la liste')
-      setSubmitError('Veuillez sélectionner une ville dans la liste avant de continuer.')
+      setCityError('Veuillez selectionner une ville dans la liste')
+      setSubmitError('Veuillez selectionner une ville dans la liste avant de continuer.')
       return
     }
 
@@ -290,13 +290,13 @@ export default function InscriptionPatron() {
       if (!profileSync.ok) {
         console.error('inscription patron profile sync error', profileSync)
         setLoading(false)
-        setSubmitError("Le compte a été créé, mais le profil patron n'a pas pu être initialisé.")
-        Alert.alert('Erreur', "Le compte a été créé, mais le profil patron n'a pas pu être initialisé.")
+        setSubmitError("Le compte a ete cree, mais le profil patron n'a pas pu etre initialise.")
+        Alert.alert('Erreur', "Le compte a ete cree, mais le profil patron n'a pas pu etre initialise.")
         return
       }
 
       if ('warning' in profileSync && profileSync.warning === 'insert_etablissement_failed') {
-        finishSignupFlow("Votre compte patron a bien été créé. L'établissement initial sera à compléter après connexion.", getHomeRouteForRole('patron'))
+        finishSignupFlow("Votre compte patron a bien ete cree. L'etablissement initial sera a completer apres connexion.", getHomeRouteForRole('patron'))
         return
       }
     }
@@ -305,11 +305,11 @@ export default function InscriptionPatron() {
     const hasSession = Boolean(data.session)
     console.log('[signup:patron] navigation start', { hasSession })
     if (hasSession) {
-      finishSignupFlow('Votre compte patron a bien été créé. Redirection en cours...', getHomeRouteForRole('patron'))
+      finishSignupFlow('Votre compte patron a bien ete cree. Redirection en cours...', getHomeRouteForRole('patron'))
       return
     }
 
-    finishSignupFlow('Votre compte a bien été créé. Confirmez votre email puis connectez-vous.', getLoginRouteForRole('patron'))
+    finishSignupFlow('Votre compte a bien ete cree. Confirmez votre email puis connectez-vous.', getLoginRouteForRole('patron'))
   }
 
   return (
@@ -322,7 +322,7 @@ export default function InscriptionPatron() {
         </TouchableOpacity>
 
         <Text style={styles.eyebrow}>RENFORT</Text>
-        <Text style={styles.title}>Créer un compte</Text>
+        <Text style={styles.title}>Creer un compte</Text>
         <Text style={styles.subtitle}>
           Lancez votre recherche et trouvez rapidement le bon profil.
         </Text>
@@ -331,7 +331,7 @@ export default function InscriptionPatron() {
           <Text style={styles.label}>Nom du restaurant</Text>
           <TextInput style={styles.input} placeholder="Ex : Brasserie du Vieux Port" placeholderTextColor="#9A9388" value={nomRestaurant} onChangeText={(value) => { setNomRestaurant(value); if (submitError) setSubmitError('') }} />
 
-          <Text style={styles.label}>Votre prénom</Text>
+          <Text style={styles.label}>Votre prenom</Text>
           <TextInput style={styles.input} placeholder="Ex : Jean" placeholderTextColor="#9A9388" value={prenom} onChangeText={(value) => { setPrenom(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Email</Text>
@@ -350,7 +350,7 @@ export default function InscriptionPatron() {
           />
           {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
 
-          <Text style={styles.label}>Téléphone</Text>
+          <Text style={styles.label}>Telephone</Text>
           <TextInput style={styles.input} placeholder="06 00 00 00 00" placeholderTextColor="#9A9388" keyboardType="phone-pad" value={telephone} onChangeText={(value) => { setTelephone(value); if (submitError) setSubmitError('') }} />
 
           <Text style={styles.label}>Ville ou code postal</Text>
@@ -376,7 +376,7 @@ export default function InscriptionPatron() {
               {citiesLoading ? (
                 <Text style={styles.cityHelper}>Recherche des suggestions...</Text>
               ) : cityOptions.length === 0 ? (
-                <Text style={styles.cityHelper}>Aucune ville trouvée</Text>
+                <Text style={styles.cityHelper}>Aucune ville trouvee</Text>
               ) : (
                 cityOptions.map((city) => {
                   const isSelected = selectedCity?.nom === city.nom && selectedCity?.codePostal === city.codePostal
@@ -398,7 +398,7 @@ export default function InscriptionPatron() {
           )}
 
           <Text style={styles.label}>Mot de passe</Text>
-          <TextInput style={styles.input} placeholder="Minimum 6 caractères" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
+          <TextInput style={styles.input} placeholder="Minimum 6 caracteres" placeholderTextColor="#9A9388" secureTextEntry value={motDePasse} onChangeText={(value) => { setMotDePasse(value); if (submitError) setSubmitError('') }} />
 
           {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
           {submitSuccess ? <Text style={styles.submitSuccess}>{submitSuccess}</Text> : null}
@@ -412,12 +412,12 @@ export default function InscriptionPatron() {
             }}
             disabled={loading || !selectedCity}
           >
-            <Text style={styles.buttonText}>{loading ? 'Création en cours...' : 'Créer mon compte'}</Text>
+            <Text style={styles.buttonText}>{loading ? 'Creation en cours...' : 'Creer mon compte'}</Text>
           </Pressable>
         </View>
 
         <TouchableOpacity style={styles.loginLink} onPress={() => router.push('/connexion-patron')}>
-          <Text style={styles.loginText}>Déjà un compte ? Se connecter</Text>
+          <Text style={styles.loginText}>Deja un compte ? Se connecter</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -513,6 +513,7 @@ const styles = StyleSheet.create({
   loginLink: { alignItems: 'center', marginTop: 20 },
   loginText: { fontSize: 14, color: C.terra, fontWeight: '700' },
 })
+
 
 
 

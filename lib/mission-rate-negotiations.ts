@@ -314,7 +314,7 @@ export async function getMissionRateNegotiationEligibility(
   const baseRate = roundMoney(toSafeNumber((mission as any).salaire))
   const missionStatus = normalizeMissionStatus((mission as any).statut)
   if (missionStatus !== 'open') {
-    return denied(['La mission nâ€™est plus ouverte Ã  la nÃ©gociation.'], baseRate)
+    return denied(["La mission n'est plus ouverte a la negociation."], baseRate)
   }
 
   if (
@@ -325,7 +325,7 @@ export async function getMissionRateNegotiationEligibility(
       (mission as any).heure_fin
     )
   ) {
-    return denied(['La mission nâ€™est plus disponible.'], baseRate)
+    return denied(["La mission n'est plus disponible."], baseRate)
   }
 
   const { data: existingEngagement } = await supabase
@@ -338,7 +338,7 @@ export async function getMissionRateNegotiationEligibility(
     .maybeSingle()
 
   if (existingEngagement && ['confirmed', 'active', 'completed'].includes(String((existingEngagement as any).status ?? '').toLowerCase())) {
-    return denied(['La mission est dÃ©jÃ  engagÃ©e ou confirmÃ©e.'], baseRate)
+    return denied(['La mission est deja engagee ou confirmee.'], baseRate)
   }
 
   const { data: existingNegotiation } = await supabase
@@ -349,7 +349,7 @@ export async function getMissionRateNegotiationEligibility(
     .maybeSingle()
 
   if (existingNegotiation?.id) {
-    return denied(['Une contre-offre existe dÃ©jÃ  pour cette mission.'], baseRate)
+    return denied(['Une contre-offre existe deja pour cette mission.'], baseRate)
   }
 
   const snapshot = await getServeurReliabilitySnapshot(serveurId)
@@ -438,7 +438,7 @@ export async function createMissionRateCounterOffer(input: {
     return {
       ok: false,
       reason: 'not_allowed',
-      message: eligibility.reasons[0] ?? 'La nÃ©gociation nâ€™est pas disponible pour cette mission.',
+      message: eligibility.reasons[0] ?? "La negociation n'est pas disponible pour cette mission.",
     }
   }
 
@@ -447,7 +447,7 @@ export async function createMissionRateCounterOffer(input: {
     return {
       ok: false,
       reason: 'invalid_rate',
-      message: `Le tarif proposÃ© doit Ãªtre compris entre ${eligibility.baseRate} et ${eligibility.maxAllowedRate} ${String.fromCharCode(8364)}.`,
+      message: `Le tarif propose doit etre compris entre ${eligibility.baseRate} et ${eligibility.maxAllowedRate} ${String.fromCharCode(8364)}.`,
     }
   }
 
@@ -480,14 +480,14 @@ export async function createMissionRateCounterOffer(input: {
 
   if (error) {
     if (String((error as any).message ?? '').toLowerCase().includes('duplicate')) {
-      return { ok: false, reason: 'already_exists', message: 'Une contre-offre existe dÃ©jÃ  pour cette mission.' }
+      return { ok: false, reason: 'already_exists', message: 'Une contre-offre existe deja pour cette mission.' }
     }
-    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™enregistrer la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: "Impossible d'enregistrer la contre-offre." }
   }
 
   const negotiation = normalizeMissionRateNegotiationRecord(data as RawMissionRateNegotiation)
   if (!negotiation) {
-    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™enregistrer la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: "Impossible d'enregistrer la contre-offre." }
   }
 
   return { ok: true, negotiation, eligibility }
@@ -512,7 +512,7 @@ export async function acceptMissionRateCounterOffer(input: {
   }
 
   if (negotiation.status !== 'pending') {
-    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus Ãªtre acceptÃ©e.' }
+    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus etre acceptee.' }
   }
 
   const acceptedAt = new Date().toISOString()
@@ -529,7 +529,7 @@ export async function acceptMissionRateCounterOffer(input: {
     .maybeSingle()
 
   if (error) {
-    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™accepter la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: "Impossible d'accepter la contre-offre." }
   }
 
   if (input.engagementId) {
@@ -541,7 +541,7 @@ export async function acceptMissionRateCounterOffer(input: {
 
   const normalized = normalizeMissionRateNegotiationRecord(data as RawMissionRateNegotiation)
   if (!normalized) {
-    return { ok: false, reason: 'write_failed', message: 'Impossible dâ€™accepter la contre-offre.' }
+    return { ok: false, reason: 'write_failed', message: "Impossible d'accepter la contre-offre." }
   }
 
   return { ok: true, negotiation: normalized }
@@ -565,7 +565,7 @@ export async function rejectMissionRateCounterOffer(
   }
 
   if (negotiation.status !== 'pending') {
-    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus Ãªtre refusÃ©e.' }
+    return { ok: false, reason: 'invalid_status', message: 'Cette contre-offre ne peut plus etre refusee.' }
   }
 
   const rejectedAt = new Date().toISOString()
@@ -591,5 +591,6 @@ export async function rejectMissionRateCounterOffer(
 
   return { ok: true, negotiation: normalized }
 }
+
 
 

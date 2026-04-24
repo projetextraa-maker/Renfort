@@ -31,7 +31,7 @@ export default function AbonnementConfirmationScreen() {
       })
 
       if (error || !data?.url) {
-        Alert.alert('Erreur', 'Impossible d’ouvrir le paiement pour le moment.')
+        Alert.alert('Erreur', "Impossible d'ouvrir le paiement pour le moment.")
         return
       }
 
@@ -60,7 +60,7 @@ export default function AbonnementConfirmationScreen() {
         </Pressable>
 
         <Text style={styles.title}>Confirmez votre formule</Text>
-        <Text style={styles.subtitle}>Un dernier récapitulatif avant le paiement.</Text>
+        <Text style={styles.subtitle}>Un dernier recapitulatif avant le paiement.</Text>
 
         <View style={styles.card}>
           <Text style={styles.label}>Offre</Text>
@@ -79,7 +79,7 @@ export default function AbonnementConfirmationScreen() {
           <View style={styles.divider} />
 
           <Text style={styles.info}>Sans engagement</Text>
-          <Text style={styles.info}>Annulable à tout moment</Text>
+          <Text style={styles.info}>Annulable a tout moment</Text>
         </View>
 
         <Pressable
@@ -113,3 +113,4 @@ const styles = StyleSheet.create({
   primaryBtnDisabled: { opacity: 0.7 },
   primaryBtnTxt: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
 })
+
