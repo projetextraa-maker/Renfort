@@ -31,6 +31,21 @@ function normalizeContractStatus(value: string | null | undefined) {
   return 'draft'
 }
 
+function isMissingContractsAuditColumnError(error: unknown) {
+  const message = String((error as { message?: string } | null)?.message ?? '').toLowerCase()
+  return (
+    (message.includes('patron_signed_by_user_id') ||
+      message.includes('patron_sign_role') ||
+      message.includes('patron_signature_ip') ||
+      message.includes('patron_signature_user_agent') ||
+      message.includes('worker_signed_by_user_id') ||
+      message.includes('worker_sign_role') ||
+      message.includes('worker_signature_ip') ||
+      message.includes('worker_signature_user_agent')) &&
+    (message.includes('schema cache') || message.includes('does not exist') || message.includes('column'))
+  )
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -177,12 +192,41 @@ serve(async (req) => {
       patch.worker_signature_user_agent = userAgent
     }
 
-    const { error: updateError } = await admin
+    let { error: updateError } = await admin
       .from('contracts')
       .update(patch)
       .eq('id', current.id)
 
+    if (updateError && isMissingContractsAuditColumnError(updateError)) {
+      console.warn('contract-sign-with-audit audit fallback', {
+        contractId: current.id,
+        engagementId,
+        actor,
+        error: updateError.message,
+      })
+
+      const fallbackPatch: Record<string, unknown> = {
+        status: nextStatus,
+        patron_signed_at: nextPatronSignedAt,
+        worker_signed_at: nextWorkerSignedAt,
+      }
+
+      const fallbackUpdate = await admin
+        .from('contracts')
+        .update(fallbackPatch)
+        .eq('id', current.id)
+
+      updateError = fallbackUpdate.error
+    }
+
     if (updateError) {
+      console.error('contract-sign-with-audit update failed', {
+        contractId: current.id,
+        engagementId,
+        actor,
+        userId: user.id,
+        error: updateError.message || 'Unable to save signature',
+      })
       return new Response(JSON.stringify({ error: updateError.message || 'Unable to save signature' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

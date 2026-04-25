@@ -1255,19 +1255,6 @@ export default function MissionsServeurScreen() {
           ))}</View>
         )}
 
-        <View style={s.sectionHeader}><Text style={s.sectionTitle}>Votre activité</Text></View>
-        <View style={s.perfGrid}>
-          <View style={s.perfMain}>
-            <Text style={s.perfEyebrow}>Fiabilité</Text>
-            <Text style={s.perfBig}>{taux}%</Text>
-            <View style={[s.perfBadge, { backgroundColor: tone.bg, borderColor: tone.border }]}><Text style={[s.perfBadgeTxt, { color: tone.text }]}>{tauxLabel(taux)}</Text></View>
-            <View style={s.progressTrack}><View style={[s.progressFill, { width: `${taux}%` as any }]} /></View>
-          </View>
-          <View style={s.perfSide}>
-            <View style={s.perfSmall}><Text style={s.perfSmallIcon}>{"⭐"}</Text><Text style={s.perfSmallVal}>{serveur.score != null ? serveur.score.toFixed(1) : '-'}</Text><Text style={s.perfSmallLbl}>Note</Text></View>
-            <View style={[s.perfSmall, s.perfSmallSpacing]}><Text style={s.perfSmallIcon}>{"💼"}</Text><Text style={s.perfSmallVal}>{serveur.missions_realisees ?? 0}</Text><Text style={s.perfSmallLbl}>Réalisées</Text></View>
-          </View>
-        </View>
           </>
         )}
       </ScrollView>

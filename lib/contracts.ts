@@ -762,7 +762,9 @@ async function signContractWithAudit(
     return { ok: false, reason: 'blocked', message: 'Le contrat ne peut pas être signé sans snapshot métier.' }
   }
 
-  const { data, error } = await supabase.functions.invoke('contract-sign-with-audit', {
+  const functionName = 'contract-sign-with-audit'
+
+  const { data, error } = await supabase.functions.invoke(functionName, {
     body: {
       engagementId,
       actor,
@@ -770,10 +772,36 @@ async function signContractWithAudit(
   })
 
   if (error || data?.error) {
+    const errorMessage = String(data?.error ?? error?.message ?? '')
+    const errorContext = (error as { context?: { status?: number } | null } | null)?.context ?? null
+    const errorStatus = errorContext?.status ?? null
+
+    console.error('contract sign invoke failed', {
+      engagementId,
+      actor,
+      functionName,
+      status: errorStatus,
+      error: error
+        ? {
+            name: error.name ?? null,
+            message: error.message ?? null,
+            context: errorContext,
+          }
+        : null,
+      data: data ?? null,
+    })
+
+    const missingFunction =
+      errorStatus === 404 ||
+      errorMessage.includes('non-2xx') ||
+      errorMessage.toLowerCase().includes('not found')
+
     return {
       ok: false,
       reason: 'update_failed',
-      message: data?.error ?? error?.message ?? "Impossible d'enregistrer cette signature.",
+      message: missingFunction
+        ? `La fonction Supabase ${functionName} est introuvable ou non deployee. Deploie-la puis reessaie.`
+        : data?.error ?? error?.message ?? "Impossible d'enregistrer cette signature.",
     }
   }
 
